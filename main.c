@@ -2,9 +2,12 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
+#include <errno.h>
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define ARRAY_COUNT(a) (sizeof(a) / sizeof(a[0]))
 
 char *read_file(const char *path, int *len)
 {
@@ -88,7 +91,14 @@ typedef enum {
     TOKEN_EOF = 0,
     TOKEN_SYM,
     TOKEN_NUM,
-    //
+    // Operators
+    TOKEN_EQUAL,
+    TOKEN_PLUS,
+    // Keywords
+    TOKEN_PROC,
+    TOKEN_TYPE,
+    // Meta-tokens
+    TOKEN_SOME_OP,
     TOKEN_UNSET,
     TOKEN_COUNT,
 } Token_Type;
@@ -107,6 +117,16 @@ typedef struct {
     Location loc;
 } Lexer;
 
+static const char *operators[TOKEN_COUNT] = {
+    [TOKEN_EQUAL] = "==",
+    [TOKEN_PLUS] = "+",
+};
+
+static const char *keywords[TOKEN_COUNT] = {
+    [TOKEN_PROC] = "proc",
+    [TOKEN_TYPE] = "type",
+};
+
 bool is_white_space(char c)
 {
     return (c == ' ' ||
@@ -120,15 +140,65 @@ bool is_end_of_line(char c)
     return c == '\n' || c == '\r';
 }
 
+bool is_operator(char *str, int count, char c)
+{
+    for (int i = 0; i < (int)ARRAY_COUNT(operators); ++i) {
+        const char *op = operators[i];
+        if (op == NULL) continue;
+        if ((int)strlen(op) < count+1) continue;
+        if (strncmp(str, op, count) != 0) continue;
+        if (op[count] == c) return true;
+    }
+    return false;
+}
+
+bool is_symbol(char *str, int count, char c)
+{
+    if (c == '/') return false;
+    if (is_white_space(c)) return false;
+    if (is_operator(str, count, c)) return false;
+    return true;
+}
+
+Token_Type operator_from_str(char *str, int count)
+{
+    for (int i = 0; i < (int)ARRAY_COUNT(operators); ++i) {
+        const char *op = operators[i];
+        if (op == NULL) continue;
+        if ((int)strlen(op) != count) continue;
+        if (strncmp(str, op, count) != 0) continue;
+        return (Token_Type)i;
+    }
+    return TOKEN_EOF;
+}
+
+Token_Type keyword_from_str(char *str, int count)
+{
+    for (int i = 0; i < (int)ARRAY_COUNT(keywords); ++i) {
+        const char *kwd = keywords[i];
+        if (kwd == NULL) continue;
+        if ((int)strlen(kwd) != count) continue;
+        if (strncmp(str, kwd, count) != 0) continue;
+        return (Token_Type)i;
+    }
+    return TOKEN_EOF;
+}
+
 const char *token_type(Token_Type t)
 {
     switch (t) {
         case TOKEN_EOF: return "eof";
         case TOKEN_SYM: return "sym";
         case TOKEN_NUM: return "num";
-
+        case TOKEN_EQUAL:
+        case TOKEN_PLUS:
+            return operators[t];
+        case TOKEN_TYPE:
+        case TOKEN_PROC:
+            return keywords[t];
         case TOKEN_UNSET:
         case TOKEN_COUNT:
+        case TOKEN_SOME_OP:
             return "<invalid>";
     }
     // TODO: Keywords, operators
@@ -216,10 +286,53 @@ void lexer_next(Lexer *lex, Token *tok)
 
     Token_Type type = TOKEN_UNSET;
     String_Builder sb = {0};
+    int index = 0;
+    Location token_loc = lex->loc;
 
-    while ((c = lexer_advance(lex))) {
+    while ((c = lexer_peek(lex))) {
         switch (type) {
             case TOKEN_UNSET: {
+                sb.count = 0;
+                index = 0;
+                token_loc = lex->loc;
+
+                if (is_operator(0, 0, c)) {
+                    type = TOKEN_SOME_OP;
+                } else {
+                    type = TOKEN_SYM;
+                }
+            } break;
+            case TOKEN_SOME_OP: {
+                if (is_operator(sb.data, sb.count, c)) {
+                    sb_append(&sb, c);
+                    lexer_advance(lex);
+                } else {
+                    tok->loc = token_loc;
+                    tok->type = operator_from_str(sb.data, sb.count);
+                    if (tok->type == TOKEN_EOF) {
+                        error_exit(token_loc, "Unrecognized operator: '%.*s'.", sb.count, sb.data);
+                    }
+                    return;
+                }
+                index++;
+            } break;
+            case TOKEN_SYM: {
+                if (is_symbol(sb.data, sb.count, c)) {
+                    sb_append(&sb, c);
+                    lexer_advance(lex);
+                } else {
+                    tok->loc = token_loc;
+                    Token_Type kwd = keyword_from_str(sb.data, sb.count);
+                    if (kwd != TOKEN_EOF) {
+                        tok->type = kwd;
+                        return;
+                    }
+
+                    tok->type = TOKEN_SYM;
+                    tok->len = sb.count;
+                    tok->data = sb.data;
+                    return;
+                }
             } break;
             default: {
                 error_exit(lex->loc, "Unimplemented token type.");
@@ -235,6 +348,10 @@ int main(void)
     const char *path = "test.ln";
     int len = 0;
     char *src = read_file(path, &len);
+    if (src == NULL) {
+        fprintf(stderr, "error: Could not open file %s: %s\n", path, strerror(errno));
+        return 1;
+    }
 
     Lexer lex = {0};
     lex.loc.path = path;
@@ -250,3 +367,4 @@ int main(void)
      
     return 0;
 }
+
