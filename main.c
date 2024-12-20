@@ -58,6 +58,21 @@ void msg(const char *mode, Location loc, const char *fmt, ...)
 #define warn(...) msg("warning", __VA_ARGS__)
 #define error_exit(...) do {error(__VA_ARGS__); exit(1);} while (0)
 
+// Dynamic Array Helpers
+
+#define append_many(a, c) (stretch_buffer(sizeof(*(a)->data), (void **)&(a)->data, &(a)->allocated, &(a)->count, (c)), &(a)->data[(a)->count - c])
+#define append(a)         (append_many(a, 1))
+
+void stretch_buffer(int sz, void **data, int *allocated, int *count, int add)
+{
+    if (*count + add > *allocated) {
+        int min = *count + add - *allocated;
+        *allocated += MAX(min, *allocated);
+        *data = realloc(*data, *allocated * sz);
+    }
+    *count += add;
+}
+
 // String Builder
 
 typedef struct {
@@ -66,26 +81,14 @@ typedef struct {
     int count;
 } String_Builder;
 
-char *sb_append_many(String_Builder *sb, int count)
-{
-    if (sb->count + count >= sb->allocated) {
-        int min = sb->count + count - sb->allocated;
-        sb->allocated += MAX(min, sb->allocated);
-        sb->data = realloc(sb->data, sb->allocated * sizeof(*sb->data));
-    }
-    char *data = sb->data + sb->count;
-    sb->count += count;
-    return data;
-}
-
 char *sb_append(String_Builder *sb, char c)
 {
-    char *p = sb_append_many(sb, 1);
+    char *p = append_many(sb, 1);
     *p = c;
     return p;
 }
 
-// Lexer definitions
+// Lexer
 
 typedef enum {
     TOKEN_EOF = 0,
@@ -240,28 +243,28 @@ const char *token_type(Token_Type t)
     return "<invalid>";
 }
 
-void token_repr(char *buf, int max, Token tok)
+void token_repr(char *buf, int max, Token *tok)
 {
-    if (tok.type == TOKEN_SYM || tok.type == TOKEN_NUM) {
-        snprintf(buf, max, "`%.*s`", (int)tok.len, tok.data);
+    if (tok->type == TOKEN_SYM || tok->type == TOKEN_NUM) {
+        snprintf(buf, max, "`%.*s`", (int)tok->len, tok->data);
         return;
     }
   
     // TODO: When reporting strings and characters, print all control and non-ASCII characters
     // as escape codes, in a way compatible with the source code.
 
-    if (tok.type == TOKEN_STR) {
-        snprintf(buf, max, "\"%.*s\"", (int)tok.len, tok.data);
+    if (tok->type == TOKEN_STR) {
+        snprintf(buf, max, "\"%.*s\"", (int)tok->len, tok->data);
         return;
     }
 
-    if (tok.type == TOKEN_CHAR) {
-        snprintf(buf, max, "'%.*s'", (int)tok.len, tok.data);
+    if (tok->type == TOKEN_CHAR) {
+        snprintf(buf, max, "'%.*s'", (int)tok->len, tok->data);
         return;
     }
 
     // Fallback.
-    snprintf(buf, max, "`%s`", token_type(tok.type));
+    snprintf(buf, max, "`%s`", token_type(tok->type));
 }
 
 char lexer_advance(Lexer *lex)
@@ -493,6 +496,39 @@ void lexer_next(Lexer *lex, Token *tok)
     tok->type = TOKEN_EOF; 
 }
 
+// Parser
+
+typedef enum {
+    NODE_CHAR,
+    // Meta-types
+    NODE_COUNT,
+} Node_Type;
+
+typedef struct {
+    Node_Type type;
+} Node;
+
+typedef struct {
+    Node *data;
+    int count;
+    int allocated;
+} Node_Pool;
+
+typedef struct {
+    Token *tokens;
+    int token_count;
+    int token_pos;
+    Node_Pool node_pool;
+} Parser;
+
+// Entry Point
+
+typedef struct {
+    Token *data;
+    int count;
+    int allocated;
+} Token_Array;
+
 int main(void)
 {
     const char *path = "test.ln";
@@ -507,16 +543,26 @@ int main(void)
     lex.loc.path = path;
     lex.src = src;
     lex.len = len;
-     
+
+    Token_Array tokens = {0};
     while (1) {
-        Token tok = {0};
-        lexer_next(&lex, &tok);
+        Token *tok = append(&tokens);
+        lexer_next(&lex, tok);
+        if (tok->type == TOKEN_EOF) break;
+    }
+
+    Parser parser = {0};
+    parser.tokens = tokens.data;
+    parser.token_count = tokens.count;
+
+    /*
+    for (int i = 0; i < tokens.count; ++i) {
+        Token *tok = &tokens.data[i];
         char buf[64] = {0};
         token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
-        printf("%s(%s)\n", token_type(tok.type), buf); 
-        if (tok.type == TOKEN_EOF) break;
+        printf("%s, %s\n", token_type(tok->type), buf);
     }
-     
+    */
+    
     return 0;
 }
-
