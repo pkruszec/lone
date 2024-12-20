@@ -3,6 +3,15 @@
 /* /* test */ */
 // ==+==
 
-proc s == y//test
-    +
+proc main() {
+    cap := 20;
+    pi: float = 3.14159;
+    var x := 5;
+    var c: u8 = 'f';
+    if x == 5 {
+        print("x is 5!\n");
+    } else {
+        print("x is not 5!\n");
+    }
+}
 
