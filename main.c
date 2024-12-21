@@ -164,7 +164,8 @@ bool is_white_space(char c)
     return (c == ' ' ||
             c == '\n'||
             c == '\r'||
-            c == '\v');
+            c == '\v'||
+            c == '\0');
 }
 
 bool is_end_of_line(char c)
@@ -368,7 +369,8 @@ void lexer_next(Lexer *lex, Token *tok)
     int index = 0;
     Location token_loc = lex->loc;
 
-    while ((c = lexer_peek(lex))) {
+    while (1) {
+        c = lexer_peek(lex);
         switch (type) {
             case TOKEN_UNSET: {
                 sb.count = 0;
@@ -491,6 +493,8 @@ void lexer_next(Lexer *lex, Token *tok)
                 error_exit(lex->loc, "Unimplemented token type `%s`", token_type(type));
             } break;
         }
+
+        if (c == 0) break;
     }
 
     tok->type = TOKEN_EOF; 
@@ -529,9 +533,15 @@ typedef struct {
     int allocated;
 } Token_Array;
 
-int main(void)
+int main(int argc, char **argv)
 {
-    const char *path = "test.ln";
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s <file>\n", argv[0]);
+        fprintf(stderr, "error: no source file provided\n");
+        return 1;
+    }
+    
+    const char *path = argv[1];
     int len = 0;
     char *src = read_file(path, &len);
     if (src == NULL) {
@@ -555,14 +565,12 @@ int main(void)
     parser.tokens = tokens.data;
     parser.token_count = tokens.count;
 
-    /*
     for (int i = 0; i < tokens.count; ++i) {
         Token *tok = &tokens.data[i];
         char buf[64] = {0};
         token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
         printf("%s, %s\n", token_type(tok->type), buf);
     }
-    */
     
     return 0;
 }
