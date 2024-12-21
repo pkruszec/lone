@@ -102,6 +102,7 @@ typedef enum {
     TOKEN_MINUS,
     TOKEN_ASTERISK,
     TOKEN_SLASH,
+    TOKEN_MODULO,
     TOKEN_SEMICOLON,
     TOKEN_ASSIGN,
     TOKEN_COLON,
@@ -144,6 +145,7 @@ static const char *operators[TOKEN_COUNT] = {
     [TOKEN_PLUS] = "+",
     [TOKEN_MINUS] = "-",
     [TOKEN_ASTERISK] = "*",
+    [TOKEN_MODULO] = "%",
     [TOKEN_SLASH] = "/",
     [TOKEN_SEMICOLON] = ";",
     [TOKEN_COLON] = ":",
@@ -359,9 +361,8 @@ void lexer_next(Lexer *lex, Token *tok)
             if (comment && (is_end_of_line(c))) {
                 comment = false;
             } else if (!comment) {
-                if (c == '/') {
-                    if (n == '/')
-                        comment = true;
+                if (c == '/' && n == '/') {
+                    comment = true;
                 } else if (block == 0 && !is_white_space(c)) {
                     break;
                 }
@@ -515,15 +516,26 @@ void lexer_next(Lexer *lex, Token *tok)
 // Parser
 
 typedef enum {
+    // Terminals
     NODE_IDENT,
     NODE_NUM,
     NODE_CHAR,
     NODE_STR,
+    // Unary operators
+    NODE_U_PLUS,
+    NODE_U_MINUS,
+    // Binary operators
+    NODE_MUL,
+    NODE_DIV,
+    NODE_MOD,
+    NODE_ADD,
+    NODE_SUB,
     // Meta-types
     NODE_COUNT,
 } Node_Type;
 
 typedef struct Node Node;
+typedef struct Node_Block Node_Block;
 
 typedef struct {
     Node **data;
@@ -538,10 +550,16 @@ struct Node {
     int len;
 };
 
-typedef struct {
-    Node *data;
+struct Node_Block {
+    Node_Block *next;
+    Node data[8];
     int count;
-    int allocated;
+};
+
+typedef struct {
+    Node_Block *head;
+    Node_Block *last;
+    int count;
 } Node_Pool;
 
 typedef struct {
@@ -558,6 +576,13 @@ const char *node_type(Node_Type type)
         case NODE_NUM: return "num";
         case NODE_CHAR: return "char";
         case NODE_STR: return "str";
+        case NODE_U_PLUS: return "unary_plus";
+        case NODE_U_MINUS: return "unary_minus";
+        case NODE_MUL: return "mul";
+        case NODE_DIV: return "div";
+        case NODE_MOD: return "mod";
+        case NODE_ADD: return "add";
+        case NODE_SUB: return "sub";
         case NODE_COUNT: break;
     }
     return "<invalid>";
@@ -569,10 +594,28 @@ void node_append_child(Node *node, Node *child)
     *buf = child;
 }
 
+Node_Block *node_pool_add_block(Node_Pool *pool)
+{
+    Node_Block *blk = malloc(sizeof(*blk));
+    memset(blk, 0, sizeof(*blk));
+    if (pool->last) {
+        pool->last->next = blk;
+        pool->last = pool->last->next;
+    } else {
+        pool->head = blk;
+        pool->last = blk;
+    }
+    pool->count++;
+    return pool->last;
+}
+
 Node *parser_alloc_node(Parser *parser)
 {
-    Node *node = append(&parser->node_pool);
-    memset(node, 0, sizeof(*node));
+    Node_Block *last = parser->node_pool.last;
+    if (!last || last->count + 1 >= (int)ARRAY_COUNT(last->data)) {
+        last = node_pool_add_block(&parser->node_pool);
+    }
+    Node *node = &last->data[last->count++];
     return node;
 }
 
@@ -588,6 +631,15 @@ Token *parser_next(Parser *parser)
     return token;
 }
 
+void parser_expect_token_type_msg(Token *tok, Token_Type type, const char *expected)
+{
+    if (tok->type != type) {
+        char buf[64] = {0};
+        token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
+        error_exit(tok->loc, "Expected %s, got %s.\n", expected, buf);
+    }
+}
+
 void parser_expect_token_type(Token *tok, Token_Type type)
 {
     if (tok->type != type) {
@@ -598,11 +650,84 @@ void parser_expect_token_type(Token *tok, Token_Type type)
 }
 
 Node *parser_parse_expr(Parser *parser);
+Node *parser_parse_mul(Parser *parser);
+Node *parser_parse_unary(Parser *parser);
 Node *parser_parse_term(Parser *parser);
 
 Node *parser_parse_expr(Parser *parser)
 {
-    return parser_parse_term(parser);
+    return parser_parse_mul(parser);
+}
+
+Node *parser_parse_mul(Parser *parser)
+{
+    Node *base = parser_parse_unary(parser);
+
+    while (1) {
+        Token *tok = parser_peek(parser);
+        Node *node = NULL;
+        if (tok->type == TOKEN_ASTERISK) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_MUL;
+        } else if (tok->type == TOKEN_SLASH) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_DIV;
+        } else if (tok->type == TOKEN_MODULO) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_MOD;
+        }
+        // info(tok->loc, "%s, %p", token_type(tok->type), node);
+        if (!node) break;
+
+        node_append_child(node, base);
+        node_append_child(node, parser_parse_unary(parser));
+        base = node;
+    }
+    
+    return base;
+}
+
+Node *parser_parse_unary(Parser *parser)
+{
+    Node *first = NULL;
+    Node *last = NULL;
+    Node *base = NULL;
+
+    while (1) {
+        Token *tok = parser_peek(parser);
+        Node *node = NULL;
+        if (tok->type == TOKEN_PLUS) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_U_PLUS;
+        } else if (tok->type == TOKEN_MINUS) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_U_MINUS;
+        }
+        if (!node) break;
+
+        last = node;
+        if (!base) {
+            base = node;
+            first = base;
+        } else {
+            node_append_child(base, node);
+            base = node;
+        }
+    }
+
+    Node *rest = parser_parse_term(parser);
+    
+    if (last && last) {
+        node_append_child(last, rest);
+        return first;
+    }
+
+    return rest;
 }
 
 Node *parser_parse_term(Parser *parser)
@@ -636,10 +761,11 @@ Node *parser_parse_term(Parser *parser)
         return node;
     }
 
-    parser_expect_token_type(tok, TOKEN_POPEN);
+    const char *expected = "expression";
+    parser_expect_token_type_msg(tok, TOKEN_POPEN, expected);
     Node *expr = parser_parse_expr(parser);
     tok = parser_next(parser);
-    parser_expect_token_type(tok, TOKEN_PCLOSE);
+    parser_expect_token_type_msg(tok, TOKEN_PCLOSE, expected);
     return expr;
 }
 
