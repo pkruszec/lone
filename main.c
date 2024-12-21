@@ -530,7 +530,15 @@ typedef enum {
     NODE_MOD,
     NODE_ADD,
     NODE_SUB,
+    // Statements
+    NODE_NOP,
+    NODE_EVAL,
+    NODE_CONST,
+    NODE_VAR,
+    NODE_ASSIGN,
     // Meta-types
+    NODE_UNSET,
+    
     NODE_COUNT,
 } Node_Type;
 
@@ -544,6 +552,7 @@ typedef struct {
 } Node_Children;
 
 struct Node {
+    Location loc;
     Node_Type type;
     Node_Children children;
     char *data;
@@ -583,6 +592,12 @@ const char *node_type(Node_Type type)
         case NODE_MOD: return "mod";
         case NODE_ADD: return "add";
         case NODE_SUB: return "sub";
+        case NODE_EVAL: return "eval";
+        case NODE_CONST: return "const";
+        case NODE_ASSIGN: return "assign";
+        case NODE_NOP: return "nop";
+        case NODE_UNSET: return "unset";
+        case NODE_VAR: return "var";
         case NODE_COUNT: break;
     }
     return "<invalid>";
@@ -609,13 +624,15 @@ Node_Block *node_pool_add_block(Node_Pool *pool)
     return pool->last;
 }
 
-Node *parser_alloc_node(Parser *parser)
+Node *parser_alloc_node(Parser *parser, Location loc)
 {
     Node_Block *last = parser->node_pool.last;
     if (!last || last->count + 1 >= (int)ARRAY_COUNT(last->data)) {
         last = node_pool_add_block(&parser->node_pool);
     }
     Node *node = &last->data[last->count++];
+    memset(node, 0, sizeof(*node));
+    node->loc = loc;
     return node;
 }
 
@@ -649,11 +666,127 @@ void parser_expect_token_type(Token *tok, Token_Type type)
     }
 }
 
+void parser_expect_fail(Token *tok, const char *expected)
+{
+    char buf[64] = {0};
+    token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
+    error_exit(tok->loc, "Expected %s, got %s.\n", expected, buf);
+}
+
+Node *parser_parse_stmt(Parser *parser);
 Node *parser_parse_expr(Parser *parser);
 Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);
 Node *parser_parse_term(Parser *parser);
+
+Node *parser_parse_stmt(Parser *parser)
+{
+    Token *peek = parser_peek(parser);
+    if (peek->type == TOKEN_SEMICOLON) {
+        Node *node = parser_alloc_node(parser, peek->loc);
+        node->type = NODE_NOP;
+        return node;
+    } else if (peek->type == TOKEN_VAR) {
+        Node *node = NULL;
+
+        parser_next(parser);
+        Node *name = parser_parse_expr(parser);
+        if (name->type != NODE_IDENT) {
+            error_exit(name->loc, "You are trying to name a variable with an expression. If you want to set the value of the expression, remove 'var' and ':'. If you want to make a variable, give it a proper name.");
+        }
+
+        Node *src = NULL;
+        Node *type = NULL;
+
+        Token *tok = parser_next(parser);
+        parser_expect_token_type(tok, TOKEN_COLON);
+
+        tok = parser_peek(parser);
+        if (tok->type == TOKEN_ASSIGN) {
+            parser_next(parser);
+            src = parser_parse_expr(parser);
+            type = parser_alloc_node(parser, tok->loc);
+            type->type = NODE_UNSET;
+        } else {
+            type = parser_parse_expr(parser);
+            tok = parser_peek(parser);
+            if (tok->type == TOKEN_ASSIGN) {
+                parser_next(parser);
+                src = parser_parse_expr(parser);
+            } else if (tok->type == TOKEN_SEMICOLON) {
+                src = parser_alloc_node(parser, tok->loc);
+                src->type = NODE_UNSET;
+            } else {
+                parser_expect_token_type_msg(tok, TOKEN_SEMICOLON, "'=' or ';'");
+            }
+        }
+
+        tok = parser_next(parser);
+        parser_expect_token_type(tok, TOKEN_SEMICOLON);
+
+        node = parser_alloc_node(parser, tok->loc);
+        node->type = NODE_VAR;
+        node_append_child(node, name);
+        node_append_child(node, src);
+        node_append_child(node, type);
+
+        return node;
+    } else {
+        Node *node = NULL;
+
+        Node *dst = parser_parse_expr(parser);
+        Token *tok = parser_next(parser);
+        if (tok->type == TOKEN_SEMICOLON) {
+            node = parser_alloc_node(parser, dst->loc);
+            node->type = NODE_EVAL;
+            node_append_child(node, dst);
+        } else if (tok->type == TOKEN_ASSIGN) {
+            Node *src = parser_parse_expr(parser);
+            node = parser_alloc_node(parser, tok->loc);
+            node->type = NODE_ASSIGN;
+            node_append_child(node, dst);
+            node_append_child(node, src);
+        } else if (tok->type == TOKEN_COLON) {
+            if (dst->type != NODE_IDENT) {
+                error_exit(dst->loc, "You are trying to name a constant with an expression. If you want to set the value of the expression, remove ':'. If you want to make a constant, give it a proper name.");
+            }
+
+            tok = parser_peek(parser);
+            
+            if (tok->type == TOKEN_ASSIGN) {
+                parser_next(parser);
+                Node *src = parser_parse_expr(parser);
+                node = parser_alloc_node(parser, dst->loc);
+                node->type = NODE_CONST;
+                node_append_child(node, dst);
+                node_append_child(node, src);
+            } else {
+                Node *type = parser_parse_expr(parser);
+                tok = parser_next(parser);
+                if (tok->type != TOKEN_ASSIGN) {
+                    error_exit(tok->loc, "Constants must be assigned a value. Maybe add a value or use `var`.");
+                }
+                Node *src = parser_parse_expr(parser);
+                node = parser_alloc_node(parser, dst->loc);
+                node->type = NODE_CONST;
+                node_append_child(node, dst);
+                node_append_child(node, src);
+                node_append_child(node, type);
+            }
+
+        } else {
+            parser_expect_fail(tok, "';', ':', or '='");
+        }
+
+        tok = parser_next(parser);
+        parser_expect_token_type(tok, TOKEN_SEMICOLON);
+
+        return node;
+    }
+
+    return NULL;
+}
 
 Node *parser_parse_expr(Parser *parser)
 {
@@ -669,11 +802,11 @@ Node *parser_parse_add(Parser *parser)
         Node *node = NULL;
         if (tok->type == TOKEN_PLUS) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, base->loc);
             node->type = NODE_ADD;
         } else if (tok->type == TOKEN_MINUS) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, base->loc);
             node->type = NODE_SUB;
         }
         if (!node) break;
@@ -695,15 +828,15 @@ Node *parser_parse_mul(Parser *parser)
         Node *node = NULL;
         if (tok->type == TOKEN_ASTERISK) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, base->loc);
             node->type = NODE_MUL;
         } else if (tok->type == TOKEN_SLASH) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, base->loc);
             node->type = NODE_DIV;
         } else if (tok->type == TOKEN_MODULO) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, base->loc);
             node->type = NODE_MOD;
         }
         if (!node) break;
@@ -727,11 +860,11 @@ Node *parser_parse_unary(Parser *parser)
         Node *node = NULL;
         if (tok->type == TOKEN_PLUS) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, tok->loc);
             node->type = NODE_U_PLUS;
         } else if (tok->type == TOKEN_MINUS) {
             parser_next(parser);
-            node = parser_alloc_node(parser);
+            node = parser_alloc_node(parser, tok->loc);
             node->type = NODE_U_MINUS;
         }
         if (!node) break;
@@ -762,25 +895,25 @@ Node *parser_parse_term(Parser *parser)
 
     // TODO: Make a lookup table for that
     if (tok->type == TOKEN_NUM) {
-        Node *node = parser_alloc_node(parser);
+        Node *node = parser_alloc_node(parser, tok->loc);
         node->type = NODE_NUM;
         node->len = tok->len;
         node->data = tok->data;
         return node;
     } else if (tok->type == TOKEN_CHAR) {
-        Node *node = parser_alloc_node(parser);
+        Node *node = parser_alloc_node(parser, tok->loc);
         node->type = NODE_CHAR;
         node->len = tok->len;
         node->data = tok->data;
         return node;
     } else if (tok->type == TOKEN_STR) {
-        Node *node = parser_alloc_node(parser);
+        Node *node = parser_alloc_node(parser, tok->loc);
         node->type = NODE_STR;
         node->len = tok->len;
         node->data = tok->data;
         return node;
     } else if (tok->type == TOKEN_SYM) {
-        Node *node = parser_alloc_node(parser);
+        Node *node = parser_alloc_node(parser, tok->loc);
         node->type = NODE_IDENT;
         node->len = tok->len;
         node->data = tok->data;
@@ -857,7 +990,7 @@ int main(int argc, char **argv)
     parser.tokens = tokens.data;
     parser.token_count = tokens.count;
 
-    Node *node = parser_parse_expr(&parser);
+    Node *node = parser_parse_stmt(&parser);
     print_node(node, 0);
     
     #if 0
