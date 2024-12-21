@@ -650,13 +650,40 @@ void parser_expect_token_type(Token *tok, Token_Type type)
 }
 
 Node *parser_parse_expr(Parser *parser);
+Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);
 Node *parser_parse_term(Parser *parser);
 
 Node *parser_parse_expr(Parser *parser)
 {
-    return parser_parse_mul(parser);
+    return parser_parse_add(parser);
+}
+
+Node *parser_parse_add(Parser *parser)
+{
+    Node *base = parser_parse_mul(parser);
+
+    while (1) {
+        Token *tok = parser_peek(parser);
+        Node *node = NULL;
+        if (tok->type == TOKEN_PLUS) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_ADD;
+        } else if (tok->type == TOKEN_MINUS) {
+            parser_next(parser);
+            node = parser_alloc_node(parser);
+            node->type = NODE_SUB;
+        }
+        if (!node) break;
+
+        node_append_child(node, base);
+        node_append_child(node, parser_parse_mul(parser));
+        base = node;
+    }
+    
+    return base;
 }
 
 Node *parser_parse_mul(Parser *parser)
@@ -679,7 +706,6 @@ Node *parser_parse_mul(Parser *parser)
             node = parser_alloc_node(parser);
             node->type = NODE_MOD;
         }
-        // info(tok->loc, "%s, %p", token_type(tok->type), node);
         if (!node) break;
 
         node_append_child(node, base);
@@ -722,7 +748,7 @@ Node *parser_parse_unary(Parser *parser)
 
     Node *rest = parser_parse_term(parser);
     
-    if (last && last) {
+    if (first && last) {
         node_append_child(last, rest);
         return first;
     }
