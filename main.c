@@ -99,6 +99,9 @@ typedef enum {
     // Operators
     TOKEN_EQUAL,
     TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_ASTERISK,
+    TOKEN_SLASH,
     TOKEN_SEMICOLON,
     TOKEN_ASSIGN,
     TOKEN_COLON,
@@ -139,6 +142,9 @@ typedef struct {
 static const char *operators[TOKEN_COUNT] = {
     [TOKEN_EQUAL] = "==",
     [TOKEN_PLUS] = "+",
+    [TOKEN_MINUS] = "-",
+    [TOKEN_ASTERISK] = "*",
+    [TOKEN_SLASH] = "/",
     [TOKEN_SEMICOLON] = ";",
     [TOKEN_COLON] = ":",
     [TOKEN_ASSIGN] = "=",
@@ -246,6 +252,11 @@ const char *token_type(Token_Type t)
 
 void token_repr(char *buf, int max, Token *tok)
 {
+    if (tok->type == TOKEN_EOF) {
+        snprintf(buf, max, "EOF");
+        return;
+    }
+    
     if (tok->type == TOKEN_SYM || tok->type == TOKEN_NUM) {
         snprintf(buf, max, "`%.*s`", (int)tok->len, tok->data);
         return;
@@ -497,20 +508,35 @@ void lexer_next(Lexer *lex, Token *tok)
         if (c == 0) break;
     }
 
+    tok->loc = lex->loc;
     tok->type = TOKEN_EOF; 
 }
 
 // Parser
 
 typedef enum {
+    NODE_IDENT,
+    NODE_NUM,
     NODE_CHAR,
+    NODE_STR,
     // Meta-types
     NODE_COUNT,
 } Node_Type;
 
+typedef struct Node Node;
+
 typedef struct {
+    Node **data;
+    int count;
+    int allocated;
+} Node_Children;
+
+struct Node {
     Node_Type type;
-} Node;
+    Node_Children children;
+    char *data;
+    int len;
+};
 
 typedef struct {
     Node *data;
@@ -525,13 +551,126 @@ typedef struct {
     Node_Pool node_pool;
 } Parser;
 
-// Entry Point
+const char *node_type(Node_Type type)
+{
+    switch (type) {
+        case NODE_IDENT: return "ident";
+        case NODE_NUM: return "num";
+        case NODE_CHAR: return "char";
+        case NODE_STR: return "str";
+        case NODE_COUNT: break;
+    }
+    return "<invalid>";
+}
+
+void node_append_child(Node *node, Node *child)
+{
+    Node **buf = append(&node->children);
+    *buf = child;
+}
+
+Node *parser_alloc_node(Parser *parser)
+{
+    Node *node = append(&parser->node_pool);
+    memset(node, 0, sizeof(*node));
+    return node;
+}
+
+Token *parser_peek(Parser *parser)
+{
+    return &parser->tokens[parser->token_pos];
+}
+
+Token *parser_next(Parser *parser)
+{
+    Token *token = &parser->tokens[parser->token_pos];
+    if (parser->token_pos < parser->token_count - 1) parser->token_pos++;
+    return token;
+}
+
+void parser_expect_token_type(Token *tok, Token_Type type)
+{
+    if (tok->type != type) {
+        char buf[64] = {0};
+        token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
+        error_exit(tok->loc, "Expected `%s`, got %s.\n", token_type(type), buf);
+    }
+}
+
+Node *parser_parse_expr(Parser *parser);
+Node *parser_parse_term(Parser *parser);
+
+Node *parser_parse_expr(Parser *parser)
+{
+    return parser_parse_term(parser);
+}
+
+Node *parser_parse_term(Parser *parser)
+{
+    Token *tok = parser_next(parser);
+
+    // TODO: Make a lookup table for that
+    if (tok->type == TOKEN_NUM) {
+        Node *node = parser_alloc_node(parser);
+        node->type = NODE_NUM;
+        node->len = tok->len;
+        node->data = tok->data;
+        return node;
+    } else if (tok->type == TOKEN_CHAR) {
+        Node *node = parser_alloc_node(parser);
+        node->type = NODE_CHAR;
+        node->len = tok->len;
+        node->data = tok->data;
+        return node;
+    } else if (tok->type == TOKEN_STR) {
+        Node *node = parser_alloc_node(parser);
+        node->type = NODE_STR;
+        node->len = tok->len;
+        node->data = tok->data;
+        return node;
+    } else if (tok->type == TOKEN_SYM) {
+        Node *node = parser_alloc_node(parser);
+        node->type = NODE_IDENT;
+        node->len = tok->len;
+        node->data = tok->data;
+        return node;
+    }
+
+    parser_expect_token_type(tok, TOKEN_POPEN);
+    Node *expr = parser_parse_expr(parser);
+    tok = parser_next(parser);
+    parser_expect_token_type(tok, TOKEN_PCLOSE);
+    return expr;
+}
+
+// entry point
 
 typedef struct {
     Token *data;
     int count;
     int allocated;
 } Token_Array;
+
+void print_node(Node *node, int indent)
+{
+    for (int i = 0; i < indent; ++i) fputc(' ', stderr);
+    if (node == NULL) {
+        fprintf(stderr, "<null>\n");
+        return;
+    }
+    fprintf(stderr, "%s", node_type(node->type));
+
+    if (node->len > 0) {
+        fprintf(stderr, "(%.*s)", node->len, node->data);
+    }
+
+    fprintf(stderr, "\n");
+    
+    for (int i = 0; i < node->children.count; ++i) {
+        Node *child = node->children.data[i];
+        print_node(child, indent + 2);
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -557,6 +696,7 @@ int main(int argc, char **argv)
     Token_Array tokens = {0};
     while (1) {
         Token *tok = append(&tokens);
+        memset(tok, 0, sizeof(*tok));
         lexer_next(&lex, tok);
         if (tok->type == TOKEN_EOF) break;
     }
@@ -565,12 +705,17 @@ int main(int argc, char **argv)
     parser.tokens = tokens.data;
     parser.token_count = tokens.count;
 
+    Node *node = parser_parse_expr(&parser);
+    print_node(node, 0);
+    
+    #if 0
     for (int i = 0; i < tokens.count; ++i) {
         Token *tok = &tokens.data[i];
         char buf[64] = {0};
         token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
         printf("%s, %s\n", token_type(tok->type), buf);
     }
+    #endif
     
     return 0;
 }
