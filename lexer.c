@@ -30,6 +30,10 @@ static const char *keywords[TOKEN_COUNT] = {
     [TOKEN_RETURN] = "return",
 };
 
+static const char *directives[TOKEN_COUNT] = {
+    [TOKEN_DIR_IF] = "#if",
+};
+
 bool is_white_space(char c)
 {
     return (c == ' ' ||
@@ -95,11 +99,24 @@ Token_Type keyword_from_str(char *str, int count)
     return TOKEN_EOF;
 }
 
+Token_Type directive_from_str(char *str, int count)
+{
+    for (int i = 0; i < (int)ARRAY_COUNT(directives); ++i) {
+        const char *dir = directives[i];
+        if (dir == NULL) continue;
+        if ((int)strlen(dir) != count) continue;
+        if (strncmp(str, dir, count) != 0) continue;
+        return (Token_Type)i;
+    }
+    return TOKEN_EOF;
+}
+
 const char *token_type(Token_Type t)
 {
     switch (t) {
         case TOKEN_EOF: return "eof";
         case TOKEN_SYM: return "sym";
+        case TOKEN_DIRECTIVE: return "directive";
         case TOKEN_NUM: return "num";
         case TOKEN_STR: return "str";
         case TOKEN_CHAR: return "char";
@@ -111,6 +128,7 @@ const char *token_type(Token_Type t)
    
     if (operators[t] != NULL) return operators[t];
     if (keywords[t] != NULL) return keywords[t];
+    if (directives[t] != NULL) return directives[t];
 
     return "<invalid>";
 }
@@ -264,6 +282,10 @@ void lexer_next(Lexer *lex, Token *tok)
                 } else if (c == '\"') {
                     type = TOKEN_STR;
                     lexer_advance(lex);
+                } else if (c == '#') {
+                    type = TOKEN_DIRECTIVE;
+                    lexer_advance(lex);
+                    sb_append(&sb, c);
                 } else if (is_digit(c) || (c == '.' && is_digit(n))) {
                     type = TOKEN_NUM;
                 } else if (is_operator(0, 0, c)) {
@@ -331,6 +353,22 @@ void lexer_next(Lexer *lex, Token *tok)
                     return;
                 }
                 index++;
+            } break;
+            case TOKEN_DIRECTIVE: {
+                if (is_symbol(sb.data, sb.count, c)) {
+                    sb_append(&sb, c);
+                    lexer_advance(lex);
+                } else {
+                    tok->loc = token_loc;
+                    Token_Type dir = directive_from_str(sb.data, sb.count);
+                    if (dir != TOKEN_EOF) {
+                        tok->type = dir;
+                        return;
+                    }
+
+                    error_exit(token_loc, "Unrecognized directive: '%.*s'.", sb.count, sb.data);
+                    return;
+                }
             } break;
             case TOKEN_SYM: {
                 if (is_symbol(sb.data, sb.count, c)) {

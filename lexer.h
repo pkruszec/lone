@@ -33,9 +33,12 @@ typedef enum {
     TOKEN_ELSE,
     TOKEN_VAR,
     TOKEN_RETURN,
+    // Directives
+    TOKEN_DIR_IF,
     // Meta-tokens
     TOKEN_SOME_RAW,
     TOKEN_SOME_OP,
+    TOKEN_DIRECTIVE,
     TOKEN_UNSET,
     TOKEN_COUNT,
 } Token_Type;

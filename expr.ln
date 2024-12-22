@@ -7,6 +7,9 @@
 // 2 + 2;
 // x := d(s: int, x: float);
 
+#if X {
+}
+
 proc main() -> int {
     CAP := 64;
     {

@@ -93,13 +93,6 @@ int main(int argc, char **argv)
         if (tok->type == TOKEN_EOF) break;
     }
 
-    Parser parser = {0};
-    parser.tokens = tokens.data;
-    parser.token_count = tokens.count;
-
-    Node *node = parser_parse_stmt(&parser);
-    print_node(node, 0);
-    
     #if 0
     for (int i = 0; i < tokens.count; ++i) {
         Token *tok = &tokens.data[i];
@@ -108,6 +101,13 @@ int main(int argc, char **argv)
         printf("%s, %s\n", token_type(tok->type), buf);
     }
     #endif
+    
+    Parser parser = {0};
+    parser.tokens = tokens.data;
+    parser.token_count = tokens.count;
+
+    Node *node = parser_parse_stmt(&parser);
+    print_node(node, 0);
     
     return 0;
 }
