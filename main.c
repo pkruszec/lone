@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -38,8 +39,12 @@ typedef struct {
     int col;
 } Location;
 
-void msg(const char *mode, Location loc, const char *fmt, ...)
+void msg(const char *compiler_file, int compiler_line, const char *mode, Location loc, const char *fmt, ...)
 {
+    if (0) {
+        fprintf(stderr, "%s:%d: ", compiler_file, compiler_line);
+    }
+    
     if (loc.path)
         fprintf(stderr, "%s:%d:%d: ", loc.path, loc.line + 1, loc.col + 1);
     else
@@ -53,9 +58,9 @@ void msg(const char *mode, Location loc, const char *fmt, ...)
     va_end(args);
 }
 
-#define info(...) msg("info", __VA_ARGS__)
-#define error(...) msg("error", __VA_ARGS__)
-#define warn(...) msg("warning", __VA_ARGS__)
+#define info(...) msg(__FILE__, __LINE__, "info", __VA_ARGS__)
+#define error(...) msg(__FILE__, __LINE__, "error", __VA_ARGS__)
+#define warn(...) msg(__FILE__, __LINE__, "warning", __VA_ARGS__)
 #define error_exit(...) do {error(__VA_ARGS__); exit(1);} while (0)
 
 // Dynamic Array Helpers
@@ -107,12 +112,14 @@ typedef enum {
     TOKEN_ASSIGN,
     TOKEN_COLON,
     TOKEN_DOT,
+    TOKEN_COMMA,
     TOKEN_POPEN,
     TOKEN_PCLOSE,
     TOKEN_COPEN,
     TOKEN_CCLOSE,
     TOKEN_SOPEN,
     TOKEN_SCLOSE,
+    TOKEN_ARROW,
     // Keywords
     TOKEN_PROC,
     TOKEN_TYPE,
@@ -151,12 +158,14 @@ static const char *operators[TOKEN_COUNT] = {
     [TOKEN_COLON] = ":",
     [TOKEN_ASSIGN] = "=",
     [TOKEN_DOT] = ".",
+    [TOKEN_COMMA] = ",",
     [TOKEN_POPEN] = "(",
     [TOKEN_PCLOSE] = ")",
     [TOKEN_COPEN] = "{",
     [TOKEN_CCLOSE] = "}",
     [TOKEN_SOPEN] = "[",
     [TOKEN_SCLOSE] = "]",
+    [TOKEN_ARROW] = "->",
 };
 
 static const char *keywords[TOKEN_COUNT] = {
@@ -524,6 +533,7 @@ typedef enum {
     // Unary operators
     NODE_U_PLUS,
     NODE_U_MINUS,
+    NODE_PROC_CALL,
     // Binary operators
     NODE_MUL,
     NODE_DIV,
@@ -536,7 +546,9 @@ typedef enum {
     NODE_CONST,
     NODE_VAR,
     NODE_ASSIGN,
+    NODE_PROC,
     // Meta-types
+    NODE_PROC_ARG,
     NODE_UNSET,
     
     NODE_COUNT,
@@ -598,6 +610,9 @@ const char *node_type(Node_Type type)
         case NODE_NOP: return "nop";
         case NODE_UNSET: return "unset";
         case NODE_VAR: return "var";
+        case NODE_PROC: return "proc";
+        case NODE_PROC_CALL: return "proc_call";
+        case NODE_PROC_ARG: return "proc_arg";
         case NODE_COUNT: break;
     }
     return "<invalid>";
@@ -678,6 +693,7 @@ Node *parser_parse_expr(Parser *parser);
 Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);
+Node *parser_parse_proc_call(Parser *parser);
 Node *parser_parse_term(Parser *parser);
 
 Node *parser_parse_stmt(Parser *parser)
@@ -687,13 +703,18 @@ Node *parser_parse_stmt(Parser *parser)
         Node *node = parser_alloc_node(parser, peek->loc);
         node->type = NODE_NOP;
         return node;
+    } else if (peek->type == TOKEN_PROC) {
+        parser_next(parser);
+        Node *name = parser_parse_expr(parser);
+        assert(!"TODO");
+        return NULL;
     } else if (peek->type == TOKEN_VAR) {
         Node *node = NULL;
 
         parser_next(parser);
         Node *name = parser_parse_expr(parser);
         if (name->type != NODE_IDENT) {
-            error_exit(name->loc, "You are trying to name a variable with an expression. If you want to set the value of the expression, remove 'var' and ':'. If you want to make a variable, give it a proper name.");
+            error_exit(name->loc, "Cannot name variable with an expression. If you want to set the value of the expression, remove 'var' and ':'. If you want to make a variable, give it a single identifier name.");
         }
 
         Node *src = NULL;
@@ -741,6 +762,7 @@ Node *parser_parse_stmt(Parser *parser)
             node = parser_alloc_node(parser, dst->loc);
             node->type = NODE_EVAL;
             node_append_child(node, dst);
+            return node;
         } else if (tok->type == TOKEN_ASSIGN) {
             Node *src = parser_parse_expr(parser);
             node = parser_alloc_node(parser, tok->loc);
@@ -749,7 +771,7 @@ Node *parser_parse_stmt(Parser *parser)
             node_append_child(node, src);
         } else if (tok->type == TOKEN_COLON) {
             if (dst->type != NODE_IDENT) {
-                error_exit(dst->loc, "You are trying to name a constant with an expression. If you want to set the value of the expression, remove ':'. If you want to make a constant, give it a proper name.");
+                error_exit(dst->loc, "Cannot name constant with an expression. If you want to set the value of the expression, remove ':'. If you want to make a constant, give it a single identifier name.");
             }
 
             tok = parser_peek(parser);
@@ -879,7 +901,7 @@ Node *parser_parse_unary(Parser *parser)
         }
     }
 
-    Node *rest = parser_parse_term(parser);
+    Node *rest = parser_parse_proc_call(parser);
     
     if (first && last) {
         node_append_child(last, rest);
@@ -887,6 +909,57 @@ Node *parser_parse_unary(Parser *parser)
     }
 
     return rest;
+}
+
+Node *parser_parse_proc_call(Parser *parser)
+{
+    Node *proc = parser_parse_term(parser);
+
+    Token *tok = parser_peek(parser);
+    if (tok->type == TOKEN_POPEN) {
+        parser_next(parser);
+        Node *call = parser_alloc_node(parser, tok->loc);
+        call->type = NODE_PROC_CALL;
+        node_append_child(call, proc);
+
+        if (parser_peek(parser)->type == TOKEN_PCLOSE) {
+            parser_next(parser);
+            return call;
+        }
+        
+        while (1) {
+            Node *fst = parser_parse_expr(parser);
+            Node *snd = NULL;
+            tok = parser_peek(parser);
+            Token *arg_tok = tok;
+
+            if (tok->type == TOKEN_COLON) {
+                parser_next(parser);
+                snd = parser_parse_expr(parser);
+            }
+
+            tok = parser_next(parser);
+
+            Node *arg = parser_alloc_node(parser, arg_tok->loc);
+            arg->type = NODE_PROC_ARG;
+            node_append_child(arg, fst);
+            if (snd) node_append_child(arg, snd);
+
+            node_append_child(call, arg);
+            
+            if (tok->type == TOKEN_PCLOSE) {
+                break;
+            } else if (tok->type == TOKEN_COMMA) {
+                continue;
+            }
+
+            parser_expect_fail(tok, "')' or ','");
+        }
+        
+        return call;
+    } else {
+        return proc;
+    }
 }
 
 Node *parser_parse_term(Parser *parser)

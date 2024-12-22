@@ -4,5 +4,8 @@
 // 23 + 23 / 32 % -5
 // x+2 := 5;
 
-var x: int = 5;
+// 2 + 2;
+// x := d(s: int, x: float);
 
+// proc main() -> int {
+// }
