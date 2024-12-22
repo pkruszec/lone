@@ -20,6 +20,7 @@ static const char *operators[TOKEN_COUNT] = {
     [TOKEN_SOPEN] = "[",
     [TOKEN_SCLOSE] = "]",
     [TOKEN_ARROW] = "->",
+    [TOKEN_AMPERSAND] = "&",
 };
 
 static const char *keywords[TOKEN_COUNT] = {

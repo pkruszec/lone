@@ -431,7 +431,7 @@ Node *parser_parse_unary(Parser *parser)
         }
     }
 
-    Node *rest = parser_parse_proc_call(parser);
+    Node *rest = parser_parse_addr(parser);
     
     if (first && last) {
         node_append_child(last, rest);
@@ -439,6 +439,37 @@ Node *parser_parse_unary(Parser *parser)
     }
 
     return rest;
+}
+
+Node *parser_parse_addr(Parser *parser)
+{
+    Node *base = parser_parse_proc_call(parser);
+
+    while (1) {
+        Token *tok = parser_peek(parser);
+        if (tok->type == TOKEN_DOT) {
+            parser_next(parser);
+            Token *tok2 = parser_peek(parser);
+            if (tok2->type == TOKEN_AMPERSAND) {
+                parser_next(parser);
+                base = node_wrap(parser, base, NODE_ADDROF);
+            } else if (tok2->type == TOKEN_ASTERISK) {
+                parser_next(parser);
+                base = node_wrap(parser, base, NODE_DEREF);
+            } else {
+                Node *node = parser_alloc_node(parser, tok2->loc);
+                node->type = NODE_MEMBER;
+                Node *member = parser_parse_term(parser);
+                node_append_child(node, base);
+                node_append_child(node, member);
+                base = node;
+            }
+        } else {
+            break;
+        }
+    }
+
+    return base;
 }
 
 Node *parser_parse_proc_call(Parser *parser)

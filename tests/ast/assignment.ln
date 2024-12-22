@@ -1,4 +1,39 @@
 // Constants (type inferred)
 a := 5;
-b := "test";
-c := 's';
+b := 42.3;
+c := "test";
+d := 's';
+
+// Constants (type specified)
+e: int = 12214;
+f: float = 546.32;
+g: s8 = -120;
+h: u64 = 4432;
+
+// Variables (type inferred)
+var i := 6;
+var j := 245.4;
+var k := 2 + 3 == 4;
+var l := 32 * 3 / 4;
+
+// Variables (type specified)
+var m: int = 6321;
+var n: float = 321.543;
+var o: bool = 2 + 3 == 4;
+var p: u64 = 32 * 3 / 4;
+
+// Variables (default value)
+var some_int: int;
+var some_bool: bool;
+var some_float: float;
+var some_u64: u64;
+
+// Assignment
+x = 43;
+y = x.&;
+(p + 2).* = 32;
+context.x = 2;
+(p + 1).member = 231.4;
+(p + 1).*.member = 231.4;
+p.*.&.*.&.* = 43; // Why not?
+x.y.z.w.* = 23;

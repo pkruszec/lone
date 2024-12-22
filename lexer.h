@@ -27,6 +27,7 @@ typedef enum {
     TOKEN_SOPEN,
     TOKEN_SCLOSE,
     TOKEN_ARROW,
+    TOKEN_AMPERSAND,
     // Keywords
     TOKEN_PROC,
     TOKEN_TYPE,

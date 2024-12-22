@@ -21,6 +21,8 @@ def test_cmd(cmd, out):
 
         print(f"TEST FAILED: {out}")
         print("\n".join(list(diff)))
+        print("Stderr was:")
+        print(process.stderr.decode("utf-8"))
 
 def record_cmd(cmd, out):
     process = subprocess.run(cmd, capture_output=True)
