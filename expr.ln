@@ -5,12 +5,16 @@
 // x+2 := 5;
 // 2 + 2;
 
-if x == 5
-    test();
-else if y == 3
-    rycyzyda();
-else
-    cioncie();
+x := 5;
+y := 4;
+z := 3;
+
+// if x == 5 + 3
+//     test();
+// else if y == 3
+//     rycyzyda();
+// else
+//     cioncie();
 
 // proc main() {
 //     x == 5;

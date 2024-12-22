@@ -103,10 +103,11 @@ int main(int argc, char **argv)
     #endif
     
     Parser parser = {0};
+    parser.loc.path = lex.loc.path;
     parser.tokens = tokens.data;
     parser.token_count = tokens.count;
 
-    Node *node = parser_parse_stmt(&parser);
+    Node *node = parser_parse_prog(&parser);
     print_node(node, 0);
     
     return 0;

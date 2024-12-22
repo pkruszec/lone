@@ -32,6 +32,8 @@ typedef enum {
     NODE_BLOCK,
     NODE_RETURN,
     NODE_IF,
+    // Program
+    NODE_PROG,
     // Meta-types
     NODE_PROC_ARG,
     NODE_PROC_RETVAL,
@@ -78,10 +80,12 @@ typedef struct {
     int token_count;
     int token_pos;
     Node_Pool node_pool;
+    Location loc;
 } Parser;
 
 const char *node_type(Node_Type type);
 
+Node *parser_parse_prog(Parser *parser);
 Node *parser_parse_stmt(Parser *parser);
 Node *parser_parse_expr(Parser *parser);
 Node *parser_parse_eq(Parser *parser);

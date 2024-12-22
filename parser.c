@@ -33,6 +33,7 @@ const char *node_type(Node_Type type)
         case NODE_IF_ELSE: return "if_else";
         case NODE_BLOCK: return "block";
         case NODE_RETURN: return "return";
+        case NODE_PROG: return "prog";
         case NODE_COUNT: break;
     }
     return "<invalid>";
@@ -165,11 +166,23 @@ Node *parser_parse_if(Parser *parser)
     return node;
 }
 
+Node *parser_parse_prog(Parser *parser)
+{
+    Node *prog = parser_alloc_node(parser, parser->loc);
+    prog->type = NODE_PROG;
+
+    while (parser_peek(parser)->type != TOKEN_EOF) {
+        Node *stmt = parser_parse_stmt(parser);
+        node_append_child(prog, stmt);
+    }
+
+    return prog;
+}
+
 Node *parser_parse_stmt(Parser *parser)
 {
     Token *peek = parser_peek(parser);
     if (peek->type == TOKEN_EOF) {
-        // TODO: Add Hello, World here
         error_exit(peek->loc,
                    "Expected statement, got EOF. Maybe add a main function.\n"
                    "+++ proc main() {\n"
