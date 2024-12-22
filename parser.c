@@ -23,6 +23,10 @@ const char *node_type(Node_Type type)
         case NODE_PROC: return "proc";
         case NODE_PROC_CALL: return "proc_call";
         case NODE_PROC_ARG: return "proc_arg";
+        case NODE_PROC_RETVAL: return "proc_retval";
+        case NODE_PROC_BODY: return "proc_body";
+        case NODE_BLOCK: return "block";
+        case NODE_RETURN: return "return";
         case NODE_COUNT: break;
     }
     return "<invalid>";
@@ -59,6 +63,14 @@ Node *parser_alloc_node(Parser *parser, Location loc)
     memset(node, 0, sizeof(*node));
     node->loc = loc;
     return node;
+}
+
+Node *node_wrap(Parser *parser, Node *node, Node_Type type)
+{
+    Node *wrap = parser_alloc_node(parser, node->loc);
+    wrap->type = type;
+    node_append_child(wrap, node);
+    return wrap;
 }
 
 Token *parser_peek(Parser *parser)
@@ -98,6 +110,30 @@ void parser_expect_fail(Token *tok, const char *expected)
     error_exit(tok->loc, "Expected %s, got %s.\n", expected, buf);
 }
 
+Node *parser_parse_block(Parser *parser)
+{
+    Token *open_brace = parser_next(parser);
+    parser_expect_token_type(open_brace, TOKEN_COPEN);
+
+    Node *node = parser_alloc_node(parser, open_brace->loc);
+    node->type = NODE_BLOCK;
+    
+    while (1) {
+        Token *tok = parser_peek(parser);
+        if (tok->type == TOKEN_EOF) break;
+        if (tok->type == TOKEN_CCLOSE) {
+            parser_next(parser);
+            return node;
+        }
+
+        Node *stmt = parser_parse_stmt(parser);
+        node_append_child(node, stmt);
+    }
+
+    error_exit(open_brace->loc, "Unmatched '{' in block.");
+    return NULL;
+}
+
 Node *parser_parse_stmt(Parser *parser)
 {
     Token *peek = parser_peek(parser);
@@ -105,10 +141,52 @@ Node *parser_parse_stmt(Parser *parser)
         Node *node = parser_alloc_node(parser, peek->loc);
         node->type = NODE_NOP;
         return node;
+    } else if (peek->type == TOKEN_RETURN) {
+        parser_next(parser);
+        Token *peek2 = parser_peek(parser);
+        if (peek2->type == TOKEN_SEMICOLON) {
+            parser_next(parser);
+            Node *node = parser_alloc_node(parser, peek->loc);
+            node->type = NODE_RETURN;
+            return node;
+        } else {
+            Node *node = node_wrap(parser, parser_parse_expr(parser), NODE_RETURN);
+            parser_expect_token_type(parser_next(parser), TOKEN_SEMICOLON);
+            return node;
+        }
     } else if (peek->type == TOKEN_PROC) {
         parser_next(parser);
-        Node *name = parser_parse_expr(parser);
-        assert(!"TODO");
+        Node *call = parser_parse_expr(parser);
+
+        if (call->type != NODE_PROC_CALL) {
+            error_exit(call->loc, "Expected a function name, then a list of arguments, for example: `proc add(a: int, b: int) -> int`.");
+        }
+
+        Node *proc = parser_alloc_node(parser, peek->loc);
+        proc->type = NODE_PROC;
+        node_append_child(proc, call);
+
+        peek = parser_peek(parser);
+        if (peek->type == TOKEN_ARROW) {
+            parser_next(parser);
+            Node *retval = node_wrap(parser, parser_parse_expr(parser), NODE_PROC_RETVAL);
+            node_append_child(proc, retval);
+        }
+
+        // NOTE: Parse all attributes, tags, etc. here
+
+        peek = parser_peek(parser);
+        if (peek->type == TOKEN_SEMICOLON) {
+            parser_next(parser);
+            return proc;
+        } else if (peek->type == TOKEN_COPEN) {
+            Node *body = node_wrap(parser, parser_parse_block(parser), NODE_PROC_BODY);
+            node_append_child(proc, body);
+            return proc;
+        } else {
+            parser_expect_fail(peek, "';' or a block");
+        }
+        
         return NULL;
     } else if (peek->type == TOKEN_VAR) {
         Node *node = NULL;

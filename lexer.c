@@ -27,6 +27,7 @@ static const char *keywords[TOKEN_COUNT] = {
     [TOKEN_IF] = "if",
     [TOKEN_ELSE] = "else",
     [TOKEN_VAR] = "var",
+    [TOKEN_RETURN] = "return",
 };
 
 bool is_white_space(char c)

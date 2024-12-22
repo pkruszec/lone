@@ -27,8 +27,12 @@ typedef enum {
     NODE_VAR,
     NODE_ASSIGN,
     NODE_PROC,
+    NODE_BLOCK,
+    NODE_RETURN,
     // Meta-types
     NODE_PROC_ARG,
+    NODE_PROC_RETVAL,
+    NODE_PROC_BODY,
     NODE_UNSET,
     
     NODE_COUNT,
