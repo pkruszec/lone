@@ -28,6 +28,15 @@ def record_cmd(cmd, out):
     with open(out, "wb") as f:
         f.write(output)
 
+def run_dir(d, func, cmd_func):
+    for p in pathlib.Path(d).glob(f"*.ln"):
+        out = p.with_suffix(".out")
+        if not out.exists():
+            print(f"Warning: Ignoring {p}, no output file")
+            continue
+        cmd = cmd_func(p)
+        func(cmd, str(out))
+
 def main():
     program, *args = sys.argv
     record = False
@@ -38,21 +47,11 @@ def main():
         elif subcommand == "rec":
             record = True
         else:
-            print(f"Usage: {program} [test|rec] [dirs]", file=sys.stderr)
+            print(f"Usage: {program} [test|rec]", file=sys.stderr)
 
     func = record_cmd if record else test_cmd
-    dirs = ["ast"]
-    if args:
-        dirs = args
-
-    for d in dirs:
-        for p in pathlib.Path(d).glob(f"*.ln"):
-            out = p.with_suffix(".out")
-            if not out.exists():
-                print(f"Warning: Ignoring {p}, no output file")
-                continue
-            cmd = [LONE_PATH, str(p)]
-            func(cmd, str(out))
+    
+    run_dir("ast", func, lambda p: [LONE_PATH, str(p)])
 
 if __name__ == "__main__":
     main()
