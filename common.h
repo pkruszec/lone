@@ -20,8 +20,10 @@ void msg(const char *compiler_file, int compiler_line, const char *mode, Locatio
 
 void stretch_buffer(int sz, void **data, int *allocated, int *count, int add);
 
-#define append_many(a, c) (stretch_buffer(sizeof(*(a)->data), (void **)&(a)->data, &(a)->allocated, &(a)->count, (c)), &(a)->data[(a)->count - c])
-#define append(a)         (append_many(a, 1))
+#define append_many(a, c)      (stretch_buffer(sizeof(*(a)->data), (void **)&(a)->data, &(a)->allocated, &(a)->count, (c)), &(a)->data[(a)->count - c])
+#define append_many_zero(a, c) (memset(append_many(a, c), 0, sizeof(*(a)->data) * (c)))
+#define append(a)              (append_many(a, 1))
+#define append_zero(a)         (append_many_zero(a, 1))
 
 typedef struct {
     char *data;

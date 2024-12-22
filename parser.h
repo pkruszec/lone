@@ -5,6 +5,8 @@
 #include "lexer.h"
 
 #define NODES(x)\
+    /* Types */\
+    x(T_PTR)\
     /* Terminal*/\
     x(IDENT)\
     x(NUM)\

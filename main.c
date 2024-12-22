@@ -72,6 +72,7 @@ typedef struct {
 
 typedef enum {
     TYPE_VOID = 0,
+    TYPE_PTR,
     TYPE_BOOL,
     TYPE_S32,
     TYPE_FLOAT32,
@@ -81,6 +82,7 @@ typedef struct {
     Type_Type type;
     const char *name;
     int len;
+    int ptr_to;
 } Type;
 
 typedef struct {
@@ -100,16 +102,9 @@ typedef struct {
     Typed_Constants consts;
 } Typed_Module;
 
-Type *type_append(Typed_Module *mod)
-{
-    Type *type = append(&mod->types);
-    memset(type, 0, sizeof(*type));
-    return type;
-}
-
 void type_append_base(Typed_Module *mod, Type_Type tt, const char *name)
 {
-    Type *t = type_append(mod);
+    Type *t = append_zero(&mod->types);
     t->type = tt;
     t->name = name;
     t->len = strlen(name);
@@ -117,7 +112,41 @@ void type_append_base(Typed_Module *mod, Type_Type tt, const char *name)
 
 int type_from_node(Node *node, Typed_Module *mod)
 {
-    return TYPE_VOID;
+    switch (node->type) {
+        case NODE_IDENT: {
+            for (int i = 0; i < mod->types.count; ++i) {
+                Type *type = &mod->types.data[i];
+                if (type->len != node->len) continue;
+                if (strncmp(type->name, node->data, type->len) == 0) {
+                    return i;
+                }
+            }
+        } break;
+        case NODE_T_PTR: {
+            assert(node->children.count >= 1);
+            Node *ptr_to = node->children.data[0];
+            int tfn = type_from_node(ptr_to, mod);
+
+            for (int i = 0; i < mod->types.count; ++i) {
+                Type *type = &mod->types.data[i];
+                if (type->type != TYPE_PTR) continue;
+                if (tfn != type->ptr_to) continue;
+
+                return i;
+            }
+
+            Type *t = append_zero(&mod->types);
+            t->type = TYPE_PTR;
+            t->ptr_to = tfn;
+            return mod->types.count - 1;
+        } break;
+        default: {
+            error_exit(node->loc, "Syntactically incorrect type annotations should have been catched in the parsing stage. This is a compiler bug.");
+        } break;
+    }
+
+    error_exit(node->loc, "Unknown type `%.*s`.", node->len, node->data);
+    return 0;
 }
 
 void type_annotate(Node *node, Typed_Module *mod)
@@ -143,14 +172,14 @@ void type_annotate(Node *node, Typed_Module *mod)
                 int type = 0;
                 if (unit->children.count > 2) {
                     type = type_from_node(unit->children.data[2], mod);
+                    info(name->loc, "%d", type);
                 } else {
                     assert(false);
-                    // type = type_infer();
                 }
                 
             } break;
             default: {
-                error_exit(unit->loc, "This cannot be used as a top-level statement.");
+                error_exit(unit->loc, "Invalid top-level statement.");
             } break;
         }
     }
@@ -179,8 +208,7 @@ int main(int argc, char **argv)
 
     Token_Array tokens = {0};
     while (1) {
-        Token *tok = append(&tokens);
-        memset(tok, 0, sizeof(*tok));
+        Token *tok = append_zero(&tokens);
         lexer_next(&lex, tok);
         if (tok->type == TOKEN_EOF) break;
     }

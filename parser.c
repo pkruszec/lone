@@ -137,8 +137,49 @@ Node *parser_parse_if(Parser *parser)
 
 Node *parser_parse_type(Parser *parser)
 {
-    // TODO
-    return parser_parse_term(parser);
+    Node *node = NULL;
+    Node *last = NULL;
+    Token *fst = NULL;
+
+    while (1) {
+        Token *peek = parser_peek(parser);
+        if (!fst) fst = peek;
+
+        // TODO: Test if the node tree is in a correct order.
+
+        if (peek->type == TOKEN_ASTERISK) {
+            parser_next(parser);
+            Node *ptr = parser_alloc_node(parser, peek->loc);
+            ptr->type = NODE_T_PTR;
+            if (node) {
+                last = node;
+                node_append_child(ptr, node);
+            } else {
+                last = ptr;
+            }
+            node = ptr;
+        } else if (peek->type == TOKEN_SYM) {
+            parser_next(parser);
+            Node *ident = parser_alloc_node(parser, peek->loc);
+            ident->type = NODE_IDENT;
+            ident->data = peek->data;
+            ident->len = peek->len;
+
+            if (!last) return ident;
+            node_append_child(last, ident);
+            return node;
+        } else {
+            char buf[64];
+            token_repr(buf, ARRAY_COUNT(buf) - 1, peek);
+            error_exit(fst->loc, "Unexpected %s in type defintion.", buf);
+        }
+
+
+    }
+
+    assert(fst);
+    error_exit(fst->loc, "A type must contain an identifier, e.g. `s32` or `**float32`");
+    return NULL;
 }
 
 Node *parser_parse_prog(Parser *parser)
