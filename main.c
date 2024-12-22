@@ -64,6 +64,98 @@ void print_node(Node *node, int indent)
     }
 }
 
+typedef struct {
+    int type;
+    Node *name;
+    Node *value;
+} Typed_Constant;
+
+typedef enum {
+    TYPE_VOID = 0,
+    TYPE_BOOL,
+    TYPE_S32,
+    TYPE_FLOAT32,
+} Type_Type;
+
+typedef struct {
+    Type_Type type;
+    const char *name;
+    int len;
+} Type;
+
+typedef struct {
+    Typed_Constant *data;
+    int count;
+    int allocated;
+} Typed_Constants;
+
+typedef struct {
+    Type *data;
+    int count;
+    int allocated;
+} Types;
+
+typedef struct {
+    Types types;
+    Typed_Constants consts;
+} Typed_Module;
+
+Type *type_append(Typed_Module *mod)
+{
+    Type *type = append(&mod->types);
+    memset(type, 0, sizeof(*type));
+    return type;
+}
+
+void type_append_base(Typed_Module *mod, Type_Type tt, const char *name)
+{
+    Type *t = type_append(mod);
+    t->type = tt;
+    t->name = name;
+    t->len = strlen(name);
+}
+
+int type_from_node(Node *node, Typed_Module *mod)
+{
+    return TYPE_VOID;
+}
+
+void type_annotate(Node *node, Typed_Module *mod)
+{
+    Node **units = node->children.data;
+    int count = node->children.count;
+
+    type_append_base(mod, TYPE_VOID, "void");
+    type_append_base(mod, TYPE_S32, "s32");
+    type_append_base(mod, TYPE_FLOAT32, "float32");
+
+    // TODO: Add all compiler-defined type aliases, like int
+    // TODO: Fetch all user-defined types
+
+    for (int i = 0; i < count; ++i) {
+        Node *unit = units[i];
+        
+        switch (unit->type) {
+            case NODE_CONST: {
+                assert(unit->children.count >= 2);
+                Node *name = unit->children.data[0];
+                Node *value = unit->children.data[1];
+                int type = 0;
+                if (unit->children.count > 2) {
+                    type = type_from_node(unit->children.data[2], mod);
+                } else {
+                    assert(false);
+                    // type = type_infer();
+                }
+                
+            } break;
+            default: {
+                error_exit(unit->loc, "This cannot be used as a top-level statement.");
+            } break;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -92,15 +184,6 @@ int main(int argc, char **argv)
         lexer_next(&lex, tok);
         if (tok->type == TOKEN_EOF) break;
     }
-
-    #if 0
-    for (int i = 0; i < tokens.count; ++i) {
-        Token *tok = &tokens.data[i];
-        char buf[64] = {0};
-        token_repr(buf, ARRAY_COUNT(buf) - 1, tok);
-        printf("%s, %s\n", token_type(tok->type), buf);
-    }
-    #endif
     
     Parser parser = {0};
     parser.loc.path = lex.loc.path;
@@ -108,7 +191,9 @@ int main(int argc, char **argv)
     parser.token_count = tokens.count;
 
     Node *node = parser_parse_prog(&parser);
+    Typed_Module mod = {0};
     print_node(node, 0);
+    type_annotate(node, &mod);
     
     return 0;
 }

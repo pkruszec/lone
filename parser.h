@@ -102,9 +102,9 @@ Node *parser_parse_eq(Parser *parser);
 Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);
-Node *parser_parse_addr(Parser *parser);
 Node *parser_parse_cast(Parser *parser);
 Node *parser_parse_proc_call(Parser *parser);
+Node *parser_parse_addr(Parser *parser);
 Node *parser_parse_term(Parser *parser);
 
 #endif // PARSER_H
