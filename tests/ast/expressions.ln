@@ -13,3 +13,8 @@
 5 / 3 + 2;
 2 / 3 % 4;
 2 / (3 % 4);
+
+// Casts
+cast(int) 5.4;
+cast(float) 5;
+cast(float)(cast(int) 3.3);

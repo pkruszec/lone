@@ -17,6 +17,7 @@
     x(DEREF)\
     x(ADDROF)\
     x(MEMBER)\
+    x(CAST)\
     /* Binary operators*/\
     x(MUL)\
     x(DIV)\
@@ -102,6 +103,7 @@ Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);
 Node *parser_parse_addr(Parser *parser);
+Node *parser_parse_cast(Parser *parser);
 Node *parser_parse_proc_call(Parser *parser);
 Node *parser_parse_term(Parser *parser);
 

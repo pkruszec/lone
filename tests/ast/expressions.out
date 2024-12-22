@@ -69,3 +69,17 @@ PROG
       MOD
         NUM(3)
         NUM(4)
+  EVAL
+    CAST
+      IDENT(int)
+      NUM(5.4)
+  EVAL
+    CAST
+      IDENT(float)
+      NUM(5)
+  EVAL
+    CAST
+      IDENT(float)
+      CAST
+        IDENT(int)
+        NUM(3.3)

@@ -1,1 +1,16 @@
 ;
+
+if 1 {
+    foo();
+} else {
+    bar();
+}
+
+if cast(int) x == 5
+    foo();
+else if 0
+    bar();
+else
+    baz();
+
+if 0 foo(); else bar();

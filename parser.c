@@ -135,6 +135,12 @@ Node *parser_parse_if(Parser *parser)
     return node;
 }
 
+Node *parser_parse_type(Parser *parser)
+{
+    // TODO
+    return parser_parse_term(parser);
+}
+
 Node *parser_parse_prog(Parser *parser)
 {
     Node *prog = parser_alloc_node(parser, parser->loc);
@@ -194,7 +200,7 @@ Node *parser_parse_stmt(Parser *parser)
         peek = parser_peek(parser);
         if (peek->type == TOKEN_ARROW) {
             parser_next(parser);
-            Node *retval = node_wrap(parser, parser_parse_expr(parser), NODE_PROC_RETVAL);
+            Node *retval = node_wrap(parser, parser_parse_type(parser), NODE_PROC_RETVAL);
             node_append_child(proc, retval);
         }
 
@@ -235,7 +241,7 @@ Node *parser_parse_stmt(Parser *parser)
             type = parser_alloc_node(parser, tok->loc);
             type->type = NODE_UNSET;
         } else {
-            type = parser_parse_expr(parser);
+            type = parser_parse_type(parser);
             tok = parser_peek(parser);
             if (tok->type == TOKEN_ASSIGN) {
                 parser_next(parser);
@@ -289,7 +295,7 @@ Node *parser_parse_stmt(Parser *parser)
                 node_append_child(node, dst);
                 node_append_child(node, src);
             } else {
-                Node *type = parser_parse_expr(parser);
+                Node *type = parser_parse_type(parser);
                 tok = parser_next(parser);
                 if (tok->type != TOKEN_ASSIGN) {
                     error_exit(tok->loc, "Constants must be assigned a value. Maybe add a value or use `var`.");
@@ -444,7 +450,7 @@ Node *parser_parse_unary(Parser *parser)
 
 Node *parser_parse_addr(Parser *parser)
 {
-    Node *base = parser_parse_proc_call(parser);
+    Node *base = parser_parse_cast(parser);
 
     while (1) {
         Token *tok = parser_peek(parser);
@@ -471,6 +477,33 @@ Node *parser_parse_addr(Parser *parser)
     }
 
     return base;
+}
+
+Node *parser_parse_cast(Parser *parser)
+{
+    Token *cast_tok = parser_peek(parser);
+    if (cast_tok->type == TOKEN_CAST) {
+        parser_next(parser);
+
+        parser_expect_token_type(parser_next(parser), TOKEN_POPEN);
+        Node *type = parser_parse_type(parser);
+        parser_expect_token_type(parser_next(parser), TOKEN_PCLOSE);
+
+        Token *check = parser_peek(parser);
+        if (check->type == TOKEN_CAST) {
+            error_exit(check->loc, "Cannot chain casts without parentheses. Wrap the consequent casts in parentheses, for example: `cast(int) (cast(float) 3)`");
+        }
+
+        Node *src = parser_parse_proc_call(parser);
+        Node *cast = parser_alloc_node(parser, cast_tok->loc);
+        cast->type = NODE_CAST;
+        node_append_child(cast, type);
+        node_append_child(cast, src);
+
+        return cast;
+    }
+
+    return parser_parse_proc_call(parser);
 }
 
 Node *parser_parse_proc_call(Parser *parser)

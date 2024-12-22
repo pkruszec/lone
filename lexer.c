@@ -30,6 +30,7 @@ static const char *keywords[TOKEN_COUNT] = {
     [TOKEN_ELSE] = "else",
     [TOKEN_VAR] = "var",
     [TOKEN_RETURN] = "return",
+    [TOKEN_CAST] = "cast",
 };
 
 static const char *directives[TOKEN_COUNT] = {

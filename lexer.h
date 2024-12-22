@@ -35,6 +35,7 @@ typedef enum {
     TOKEN_ELSE,
     TOKEN_VAR,
     TOKEN_RETURN,
+    TOKEN_CAST,
     // Directives
     TOKEN_DIR_IF,
     // Meta-tokens
