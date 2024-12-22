@@ -137,13 +137,14 @@ Node *parser_parse_if(Parser *parser)
 
 Node *parser_parse_type(Parser *parser)
 {
-    Node *node = NULL;
+    Node *first = NULL;
     Node *last = NULL;
-    Token *fst = NULL;
+    Node *base = NULL;
+    Token *begin_tok = NULL;
 
     while (1) {
         Token *peek = parser_peek(parser);
-        if (!fst) fst = peek;
+        if (!begin_tok) begin_tok = peek;
 
         // TODO: Test if the node tree is in a correct order.
 
@@ -151,13 +152,15 @@ Node *parser_parse_type(Parser *parser)
             parser_next(parser);
             Node *ptr = parser_alloc_node(parser, peek->loc);
             ptr->type = NODE_T_PTR;
-            if (node) {
-                last = node;
-                node_append_child(ptr, node);
+            
+            last = ptr;
+            if (!base) {
+                base = ptr;
+                first = base;
             } else {
-                last = ptr;
+                node_append_child(base, ptr);
+                base = ptr;
             }
-            node = ptr;
         } else if (peek->type == TOKEN_SYM) {
             parser_next(parser);
             Node *ident = parser_alloc_node(parser, peek->loc);
@@ -167,18 +170,18 @@ Node *parser_parse_type(Parser *parser)
 
             if (!last) return ident;
             node_append_child(last, ident);
-            return node;
+            return first;
         } else {
             char buf[64];
             token_repr(buf, ARRAY_COUNT(buf) - 1, peek);
-            error_exit(fst->loc, "Unexpected %s in type defintion.", buf);
+            error_exit(begin_tok->loc, "Unexpected %s in type defintion.", buf);
         }
 
 
     }
 
-    assert(fst);
-    error_exit(fst->loc, "A type must contain an identifier, e.g. `s32` or `**float32`");
+    assert(begin_tok);
+    error_exit(begin_tok->loc, "A type must contain an identifier, e.g. `s32` or `**float32`");
     return NULL;
 }
 

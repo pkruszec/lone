@@ -185,6 +185,18 @@ void type_annotate(Node *node, Typed_Module *mod)
     }
 }
 
+void print_type(Type *type, Typed_Module *mod, int depth)
+{
+    if (type->type == TYPE_PTR) {
+        fprintf(stderr, "*");
+        print_type(&mod->types.data[type->ptr_to], mod, depth + 1);
+    } else {
+        fprintf(stderr, "%.*s", type->len, type->name);
+    }
+
+    if (depth == 0) fprintf(stderr, "\n");
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -219,9 +231,15 @@ int main(int argc, char **argv)
     parser.token_count = tokens.count;
 
     Node *node = parser_parse_prog(&parser);
-    Typed_Module mod = {0};
     print_node(node, 0);
+    Typed_Module mod = {0};
     type_annotate(node, &mod);
+
+    for (int i = 0; i < mod.types.count; ++i) {
+        Type *type = &mod.types.data[i];
+        fprintf(stderr, "%d: ", i);
+        print_type(type, &mod, 0);
+    }
     
     return 0;
 }
