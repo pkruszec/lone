@@ -4,46 +4,52 @@
 #include "common.h"
 #include "lexer.h"
 
+#define NODES(x)\
+    /* Terminal*/\
+    x(IDENT)\
+    x(NUM)\
+    x(CHAR)\
+    x(STR)\
+    /* Unary operators*/\
+    x(U_PLUS)\
+    x(U_MINUS)\
+    x(PROC_CALL)\
+    /* Binary operators*/\
+    x(MUL)\
+    x(DIV)\
+    x(MOD)\
+    x(ADD)\
+    x(SUB)\
+    x(EQUAL)\
+    x(NOT_EQUAL)\
+    /* Statements*/\
+    x(NOP)\
+    x(EVAL)\
+    x(CONST)\
+    x(VAR)\
+    x(ASSIGN)\
+    x(PROC)\
+    x(BLOCK)\
+    x(RETURN)\
+    x(IF)\
+    /* Program*/\
+    x(PROG)\
+    /* Meta-types*/\
+    x(PROC_ARG)\
+    x(PROC_RETVAL)\
+    x(PROC_BODY)\
+    x(IF_COND)\
+    x(IF_IF)\
+    x(IF_ELSE)\
+    x(UNSET)\
+    /* Count*/\
+    x(COUNT)
+
+#define NODE_ENUM(e) NODE_##e,
+#define NODE_SWITCH(e) case NODE_##e: return #e;
+
 typedef enum {
-    // Terminals
-    NODE_IDENT,
-    NODE_NUM,
-    NODE_CHAR,
-    NODE_STR,
-    // Unary operators
-    NODE_U_PLUS,
-    NODE_U_MINUS,
-    NODE_PROC_CALL,
-    // Binary operators
-    NODE_MUL,
-    NODE_DIV,
-    NODE_MOD,
-    NODE_ADD,
-    NODE_SUB,
-    NODE_EQUAL,
-    NODE_NOT_EQUAL,
-    // Statements
-    NODE_NOP,
-    NODE_EVAL,
-    NODE_CONST,
-    NODE_VAR,
-    NODE_ASSIGN,
-    NODE_PROC,
-    NODE_BLOCK,
-    NODE_RETURN,
-    NODE_IF,
-    // Program
-    NODE_PROG,
-    // Meta-types
-    NODE_PROC_ARG,
-    NODE_PROC_RETVAL,
-    NODE_PROC_BODY,
-    NODE_IF_COND,
-    NODE_IF_IF,
-    NODE_IF_ELSE,
-    NODE_UNSET,
-    
-    NODE_COUNT,
+    NODES(NODE_ENUM)
 } Node_Type;
 
 typedef struct Node Node;

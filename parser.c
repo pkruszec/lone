@@ -3,38 +3,7 @@
 const char *node_type(Node_Type type)
 {
     switch (type) {
-        case NODE_IDENT: return "ident";
-        case NODE_NUM: return "num";
-        case NODE_CHAR: return "char";
-        case NODE_STR: return "str";
-        case NODE_U_PLUS: return "unary_plus";
-        case NODE_U_MINUS: return "unary_minus";
-        case NODE_MUL: return "mul";
-        case NODE_DIV: return "div";
-        case NODE_MOD: return "mod";
-        case NODE_ADD: return "add";
-        case NODE_SUB: return "sub";
-        case NODE_EQUAL: return "equal";
-        case NODE_NOT_EQUAL: return "not_equal";
-        case NODE_EVAL: return "eval";
-        case NODE_CONST: return "const";
-        case NODE_ASSIGN: return "assign";
-        case NODE_NOP: return "nop";
-        case NODE_UNSET: return "unset";
-        case NODE_VAR: return "var";
-        case NODE_PROC: return "proc";
-        case NODE_IF: return "if";
-        case NODE_PROC_CALL: return "proc_call";
-        case NODE_PROC_ARG: return "proc_arg";
-        case NODE_PROC_RETVAL: return "proc_retval";
-        case NODE_PROC_BODY: return "proc_body";
-        case NODE_IF_COND: return "if_cond";
-        case NODE_IF_IF: return "if_if";
-        case NODE_IF_ELSE: return "if_else";
-        case NODE_BLOCK: return "block";
-        case NODE_RETURN: return "return";
-        case NODE_PROG: return "prog";
-        case NODE_COUNT: break;
+        NODES(NODE_SWITCH)
     }
     return "<invalid>";
 }
