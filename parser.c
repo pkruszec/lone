@@ -141,6 +141,8 @@ Node *parser_parse_stmt(Parser *parser)
         Node *node = parser_alloc_node(parser, peek->loc);
         node->type = NODE_NOP;
         return node;
+    } else if (peek->type == TOKEN_COPEN) {
+        return parser_parse_block(parser);
     } else if (peek->type == TOKEN_RETURN) {
         parser_next(parser);
         Token *peek2 = parser_peek(parser);

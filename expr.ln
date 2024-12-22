@@ -9,7 +9,9 @@
 
 proc main() -> int {
     CAP := 64;
-    var x := 5;
+    {
+        var x := 5;
+    }
     print("Hello, {}!", x);
     x = x + 1;
     return 0;
