@@ -9,6 +9,7 @@ typedef enum {
     TOKEN_CHAR,
     // Operators
     TOKEN_EQUAL,
+    TOKEN_NOT_EQUAL,
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_ASTERISK,

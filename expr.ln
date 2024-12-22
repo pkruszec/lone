@@ -3,20 +3,15 @@
 // 23 * 23 / 32 % 5
 // 23 + 23 / 32 % -5
 // x+2 := 5;
-
 // 2 + 2;
-// x := d(s: int, x: float);
 
-#if X {
-}
+if x == 5
+    test();
+else if y == 3
+    rycyzyda();
+else
+    cioncie();
 
-proc main() -> int {
-    CAP := 64;
-    {
-        var x := 5;
-    }
-    print("Hello, {}!", x);
-    x = x + 1;
-    return 0;
-}
-
+// proc main() {
+//     x == 5;
+// }

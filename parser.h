@@ -20,6 +20,8 @@ typedef enum {
     NODE_MOD,
     NODE_ADD,
     NODE_SUB,
+    NODE_EQUAL,
+    NODE_NOT_EQUAL,
     // Statements
     NODE_NOP,
     NODE_EVAL,
@@ -29,10 +31,14 @@ typedef enum {
     NODE_PROC,
     NODE_BLOCK,
     NODE_RETURN,
+    NODE_IF,
     // Meta-types
     NODE_PROC_ARG,
     NODE_PROC_RETVAL,
     NODE_PROC_BODY,
+    NODE_IF_COND,
+    NODE_IF_IF,
+    NODE_IF_ELSE,
     NODE_UNSET,
     
     NODE_COUNT,
@@ -78,6 +84,7 @@ const char *node_type(Node_Type type);
 
 Node *parser_parse_stmt(Parser *parser);
 Node *parser_parse_expr(Parser *parser);
+Node *parser_parse_eq(Parser *parser);
 Node *parser_parse_add(Parser *parser);
 Node *parser_parse_mul(Parser *parser);
 Node *parser_parse_unary(Parser *parser);

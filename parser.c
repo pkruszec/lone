@@ -14,6 +14,8 @@ const char *node_type(Node_Type type)
         case NODE_MOD: return "mod";
         case NODE_ADD: return "add";
         case NODE_SUB: return "sub";
+        case NODE_EQUAL: return "equal";
+        case NODE_NOT_EQUAL: return "not_equal";
         case NODE_EVAL: return "eval";
         case NODE_CONST: return "const";
         case NODE_ASSIGN: return "assign";
@@ -21,10 +23,14 @@ const char *node_type(Node_Type type)
         case NODE_UNSET: return "unset";
         case NODE_VAR: return "var";
         case NODE_PROC: return "proc";
+        case NODE_IF: return "if";
         case NODE_PROC_CALL: return "proc_call";
         case NODE_PROC_ARG: return "proc_arg";
         case NODE_PROC_RETVAL: return "proc_retval";
         case NODE_PROC_BODY: return "proc_body";
+        case NODE_IF_COND: return "if_cond";
+        case NODE_IF_IF: return "if_if";
+        case NODE_IF_ELSE: return "if_else";
         case NODE_BLOCK: return "block";
         case NODE_RETURN: return "return";
         case NODE_COUNT: break;
@@ -134,13 +140,47 @@ Node *parser_parse_block(Parser *parser)
     return NULL;
 }
 
+Node *parser_parse_if(Parser *parser)
+{
+    Token *iff = parser_next(parser);
+    parser_expect_token_type(iff, TOKEN_IF);
+
+    Node *node = parser_alloc_node(parser, iff->loc);
+    node->type = NODE_IF;
+
+    Node *condition = parser_parse_expr(parser);
+    Node *stmt_if = parser_parse_stmt(parser);
+    Node *stmt_else = NULL;
+
+    Token *elze = parser_peek(parser);
+    if (elze->type == TOKEN_ELSE) {
+        parser_next(parser);
+        stmt_else = parser_parse_stmt(parser);
+    }
+
+    node_append_child(node, node_wrap(parser, condition, NODE_IF_COND));
+    node_append_child(node, node_wrap(parser, stmt_if, NODE_IF_IF));
+    if (stmt_else) node_append_child(node, node_wrap(parser, stmt_else, NODE_IF_ELSE));
+
+    return node;
+}
+
 Node *parser_parse_stmt(Parser *parser)
 {
     Token *peek = parser_peek(parser);
-    if (peek->type == TOKEN_SEMICOLON) {
+    if (peek->type == TOKEN_EOF) {
+        // TODO: Add Hello, World here
+        error_exit(peek->loc,
+                   "Expected statement, got EOF. Maybe add a main function.\n"
+                   "+++ proc main() {\n"
+                   "+++ }"
+                   );
+    } else if (peek->type == TOKEN_SEMICOLON) {
         Node *node = parser_alloc_node(parser, peek->loc);
         node->type = NODE_NOP;
         return node;
+    } else if (peek->type == TOKEN_IF) {
+        return parser_parse_if(parser);
     } else if (peek->type == TOKEN_COPEN) {
         return parser_parse_block(parser);
     } else if (peek->type == TOKEN_RETURN) {
@@ -196,7 +236,7 @@ Node *parser_parse_stmt(Parser *parser)
         parser_next(parser);
         Node *name = parser_parse_expr(parser);
         if (name->type != NODE_IDENT) {
-            error_exit(name->loc, "Cannot name variable with an expression. If you want to set the value of the expression, remove 'var' and ':'. If you want to make a variable, give it a single identifier name.");
+            error_exit(name->loc, "Cannot name variable with an expression. The syntax for `var` is `var name: type = value;`");
         }
 
         Node *src = NULL;
@@ -253,7 +293,7 @@ Node *parser_parse_stmt(Parser *parser)
             node_append_child(node, src);
         } else if (tok->type == TOKEN_COLON) {
             if (dst->type != NODE_IDENT) {
-                error_exit(dst->loc, "Cannot name constant with an expression. If you want to set the value of the expression, remove ':'. If you want to make a constant, give it a single identifier name.");
+                error_exit(dst->loc, "Cannot name constant with an expression. The syntax for constants is `name: type = value;`");
             }
 
             tok = parser_peek(parser);
@@ -294,7 +334,33 @@ Node *parser_parse_stmt(Parser *parser)
 
 Node *parser_parse_expr(Parser *parser)
 {
-    return parser_parse_add(parser);
+    return parser_parse_eq(parser);
+}
+
+Node *parser_parse_eq(Parser *parser)
+{
+    Node *base = parser_parse_add(parser);
+
+    while (1) {
+        Token *tok = parser_peek(parser);
+        Node *node = NULL;
+        if (tok->type == TOKEN_EQUAL) {
+            parser_next(parser);
+            node = parser_alloc_node(parser, base->loc);
+            node->type = NODE_EQUAL;
+        } else if (tok->type == TOKEN_NOT_EQUAL) {
+            parser_next(parser);
+            node = parser_alloc_node(parser, base->loc);
+            node->type = NODE_NOT_EQUAL;
+        }
+        if (!node) break;
+
+        node_append_child(node, base);
+        node_append_child(node, parser_parse_add(parser));
+        base = node;
+    }
+    
+    return base;
 }
 
 Node *parser_parse_add(Parser *parser)
@@ -475,11 +541,10 @@ Node *parser_parse_term(Parser *parser)
         return node;
     }
 
-    const char *expected = "expression";
-    parser_expect_token_type_msg(tok, TOKEN_POPEN, expected);
+    parser_expect_token_type(tok, TOKEN_POPEN);
     Node *expr = parser_parse_expr(parser);
     tok = parser_next(parser);
-    parser_expect_token_type_msg(tok, TOKEN_PCLOSE, expected);
+    parser_expect_token_type(tok, TOKEN_PCLOSE);
     return expr;
 }
 

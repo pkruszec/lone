@@ -2,6 +2,7 @@
 
 static const char *operators[TOKEN_COUNT] = {
     [TOKEN_EQUAL] = "==",
+    [TOKEN_NOT_EQUAL] = "!=",
     [TOKEN_PLUS] = "+",
     [TOKEN_MINUS] = "-",
     [TOKEN_ASTERISK] = "*",
@@ -259,7 +260,6 @@ void lexer_next(Lexer *lex, Token *tok)
 
     Token_Type type = TOKEN_UNSET;
     String_Builder sb = {0};
-    int index = 0;
     Location token_loc = lex->loc;
 
     while (1) {
@@ -267,7 +267,6 @@ void lexer_next(Lexer *lex, Token *tok)
         switch (type) {
             case TOKEN_UNSET: {
                 sb.count = 0;
-                index = 0;
                 token_loc = lex->loc;
                 char n = lexer_peek2(lex);
               
@@ -352,7 +351,6 @@ void lexer_next(Lexer *lex, Token *tok)
                     }
                     return;
                 }
-                index++;
             } break;
             case TOKEN_DIRECTIVE: {
                 if (is_symbol(sb.data, sb.count, c)) {
