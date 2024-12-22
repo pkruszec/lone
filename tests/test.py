@@ -30,10 +30,10 @@ def record_cmd(cmd, out):
     with open(out, "wb") as f:
         f.write(output)
 
-def run_dir(d, func, cmd_func):
+def run_dir(d, func, cmd_func, record):
     for p in pathlib.Path(d).glob(f"*.ln"):
         out = p.with_suffix(".out")
-        if not out.exists():
+        if not record and not out.exists():
             print(f"Warning: Ignoring {p}, no output file")
             continue
         cmd = cmd_func(p)
@@ -53,7 +53,7 @@ def main():
 
     func = record_cmd if record else test_cmd
     
-    run_dir("ast", func, lambda p: [LONE_PATH, str(p)])
+    run_dir("ast", func, lambda p: [LONE_PATH, str(p)], record)
 
 if __name__ == "__main__":
     main()

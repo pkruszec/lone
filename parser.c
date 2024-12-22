@@ -158,6 +158,7 @@ Node *parser_parse_stmt(Parser *parser)
                    "+++ }"
                    );
     } else if (peek->type == TOKEN_SEMICOLON) {
+        parser_next(parser);
         Node *node = parser_alloc_node(parser, peek->loc);
         node->type = NODE_NOP;
         return node;
