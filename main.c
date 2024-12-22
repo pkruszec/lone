@@ -6,9 +6,11 @@
 #include <errno.h>
 #include <assert.h>
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define ARRAY_COUNT(a) (sizeof(a) / sizeof(a[0]))
+#include "common.h"
+#include "lexer.h"
+
+#include "common.c"
+#include "lexer.c"
 
 char *read_file(const char *path, int *len)
 {
@@ -32,149 +34,6 @@ char *read_file(const char *path, int *len)
     fclose(f); 
     return buf;
 }
-
-typedef struct {
-    const char *path;
-    int line;
-    int col;
-} Location;
-
-void msg(const char *compiler_file, int compiler_line, const char *mode, Location loc, const char *fmt, ...)
-{
-    if (0) {
-        fprintf(stderr, "%s:%d: ", compiler_file, compiler_line);
-    }
-    
-    if (loc.path)
-        fprintf(stderr, "%s:%d:%d: ", loc.path, loc.line + 1, loc.col + 1);
-    else
-        fprintf(stderr, "%d:%d: ", loc.line + 1, loc.col + 1);
-
-    fprintf(stderr, "%s: ", mode);
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    fprintf(stderr, "\n");
-    va_end(args);
-}
-
-#define info(...) msg(__FILE__, __LINE__, "info", __VA_ARGS__)
-#define error(...) msg(__FILE__, __LINE__, "error", __VA_ARGS__)
-#define warn(...) msg(__FILE__, __LINE__, "warning", __VA_ARGS__)
-#define error_exit(...) do {error(__VA_ARGS__); exit(1);} while (0)
-
-// Dynamic Array Helpers
-
-#define append_many(a, c) (stretch_buffer(sizeof(*(a)->data), (void **)&(a)->data, &(a)->allocated, &(a)->count, (c)), &(a)->data[(a)->count - c])
-#define append(a)         (append_many(a, 1))
-
-void stretch_buffer(int sz, void **data, int *allocated, int *count, int add)
-{
-    if (*count + add > *allocated) {
-        int min = *count + add - *allocated;
-        *allocated += MAX(min, *allocated);
-        *data = realloc(*data, *allocated * sz);
-    }
-    *count += add;
-}
-
-// String Builder
-
-typedef struct {
-    char *data;
-    int allocated;
-    int count;
-} String_Builder;
-
-char *sb_append(String_Builder *sb, char c)
-{
-    char *p = append_many(sb, 1);
-    *p = c;
-    return p;
-}
-
-// Lexer
-
-typedef enum {
-    TOKEN_EOF = 0,
-    TOKEN_SYM,
-    TOKEN_NUM,
-    TOKEN_STR,
-    TOKEN_CHAR,
-    // Operators
-    TOKEN_EQUAL,
-    TOKEN_PLUS,
-    TOKEN_MINUS,
-    TOKEN_ASTERISK,
-    TOKEN_SLASH,
-    TOKEN_MODULO,
-    TOKEN_SEMICOLON,
-    TOKEN_ASSIGN,
-    TOKEN_COLON,
-    TOKEN_DOT,
-    TOKEN_COMMA,
-    TOKEN_POPEN,
-    TOKEN_PCLOSE,
-    TOKEN_COPEN,
-    TOKEN_CCLOSE,
-    TOKEN_SOPEN,
-    TOKEN_SCLOSE,
-    TOKEN_ARROW,
-    // Keywords
-    TOKEN_PROC,
-    TOKEN_TYPE,
-    TOKEN_IF,
-    TOKEN_ELSE,
-    TOKEN_VAR,
-    // Meta-tokens
-    TOKEN_SOME_RAW,
-    TOKEN_SOME_OP,
-    TOKEN_UNSET,
-    TOKEN_COUNT,
-} Token_Type;
-
-typedef struct {
-    Location loc;
-    Token_Type type;
-    int len;
-    char *data;
-} Token;
-
-typedef struct {
-    char *src;
-    int len;
-    int pos;
-    Location loc;
-} Lexer;
-
-static const char *operators[TOKEN_COUNT] = {
-    [TOKEN_EQUAL] = "==",
-    [TOKEN_PLUS] = "+",
-    [TOKEN_MINUS] = "-",
-    [TOKEN_ASTERISK] = "*",
-    [TOKEN_MODULO] = "%",
-    [TOKEN_SLASH] = "/",
-    [TOKEN_SEMICOLON] = ";",
-    [TOKEN_COLON] = ":",
-    [TOKEN_ASSIGN] = "=",
-    [TOKEN_DOT] = ".",
-    [TOKEN_COMMA] = ",",
-    [TOKEN_POPEN] = "(",
-    [TOKEN_PCLOSE] = ")",
-    [TOKEN_COPEN] = "{",
-    [TOKEN_CCLOSE] = "}",
-    [TOKEN_SOPEN] = "[",
-    [TOKEN_SCLOSE] = "]",
-    [TOKEN_ARROW] = "->",
-};
-
-static const char *keywords[TOKEN_COUNT] = {
-    [TOKEN_PROC] = "proc",
-    [TOKEN_TYPE] = "type",
-    [TOKEN_IF] = "if",
-    [TOKEN_ELSE] = "else",
-    [TOKEN_VAR] = "var",
-};
 
 bool is_white_space(char c)
 {
