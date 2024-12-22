@@ -1,0 +1,10 @@
+PROG
+  CONST
+    IDENT(a)
+    NUM(5)
+  CONST
+    IDENT(b)
+    STR(test)
+  CONST
+    IDENT(c)
+    CHAR(s)

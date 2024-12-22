@@ -1,0 +1,4 @@
+// Constants (type inferred)
+a := 5;
+b := "test";
+c := 's';

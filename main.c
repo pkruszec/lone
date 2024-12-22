@@ -45,18 +45,18 @@ typedef struct {
 
 void print_node(Node *node, int indent)
 {
-    for (int i = 0; i < indent; ++i) fputc(' ', stderr);
+    for (int i = 0; i < indent; ++i) fputc(' ', stdout);
     if (node == NULL) {
-        fprintf(stderr, "<null>\n");
+        fprintf(stdout, "<null>\n");
         return;
     }
-    fprintf(stderr, "%s", node_type(node->type));
+    fprintf(stdout, "%s", node_type(node->type));
 
     if (node->len > 0) {
-        fprintf(stderr, "(%.*s)", node->len, node->data);
+        fprintf(stdout, "(%.*s)", node->len, node->data);
     }
 
-    fprintf(stderr, "\n");
+    fprintf(stdout, "\n");
     
     for (int i = 0; i < node->children.count; ++i) {
         Node *child = node->children.data[i];
