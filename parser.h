@@ -73,6 +73,9 @@ struct Node {
     Node_Children children;
     char *data;
     int len;
+
+    int proc_id;
+    int scope;
 };
 
 struct Node_Block {

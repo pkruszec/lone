@@ -1,8 +1,11 @@
-x: float32 = 5.32;
-a: **s32 = 0;
-y: s32 = 4;
-z: *s32 = 0;
-w: **s32 = cast(**s32) (cast(u64) 321.2);
-b: float32 = cast(float32) (cast(u64) w);
+y := 5;
+x := y;
+z := y;
 
-// var s : s32 = 5;
+var cap := z*x + y*y;
+
+proc add(a: s32, b: s32) -> s32 {
+    var x := a + 2;
+    var y := x - 2;
+    return a*x*z + b*y;
+}

@@ -1,0 +1,10 @@
+a := 5;
+b := a*a;
+c := a + b;
+
+proc scope_test() {
+    {
+        x := 54 + a;
+    }
+    y := x;
+}
