@@ -2,9 +2,19 @@ a := 5;
 b := a*a;
 c := a + b;
 
-proc scope_test() {
-    {
-        x := 54 + a;
-    }
-    y := x;
+d := sum(4*c);
+
+proc sum(x: s32) -> s32 {
+    if x == 0 return 0;
+    return 1 + sum(x - 1);
+
+    // var y := 32;
+    // if y
+    //     x := 54 + y;
+
+    // if 1 {   
+    //     x := 54 + y;
+    //     y = x + 2;
+    // }
+    // z := x;
 }

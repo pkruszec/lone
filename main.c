@@ -117,13 +117,13 @@ typedef struct {
     int len;
     int type;
     Node *value;
+    int scope;
 } Proc_Local;
 
 typedef struct {
     Proc_Local *data;
     int count;
     int allocated;
-    int scope;
 } Proc_Locals;
 
 typedef struct {
@@ -421,7 +421,23 @@ int arg_from_name(const char *name, int len, Typed_Module *mod, int proc_id)
     return 0;
 }
 
-int local_from_name(const char *name, int len, Typed_Module *mod, int proc_id, bool do_constants)
+bool scope_is_child(Typed_Module *mod, int proc_id, int scope, int parent)
+{
+    if (scope == parent) return true;
+    Proc *proc = &unit_ref(proc_id, mod)->proc;
+
+    int c = scope;
+    while (true) {
+        int p = proc->scope_parents.data[c];
+        if (p == parent) return true;
+        c = p;
+        if (c == 0) break;
+    }
+
+    return false;
+}
+
+int local_from_name(const char *name, int len, Typed_Module *mod, int proc_id, int scope, bool do_constants)
 {
     if (!proc_id) return 0;
     Proc *proc = &unit_ref(proc_id, mod)->proc;
@@ -432,6 +448,7 @@ int local_from_name(const char *name, int len, Typed_Module *mod, int proc_id, b
         Proc_Local *item = &array->data[i];
         if (item->len != len) continue;
         if (strncmp(item->name, name, len) != 0) continue;
+        if (!scope_is_child(mod, proc_id, scope, item->scope)) continue;
         return i;
     }
 
@@ -543,7 +560,6 @@ void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
             node->children.data[i]->proc_id = node->proc_id;
         }
     }
-
     if (node->scope) {
         for (int i = 0; i < node->children.count; ++i) {
             node->children.data[i]->scope = node->scope;
@@ -551,12 +567,49 @@ void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
     }
 
     switch (node->type) {
-        case NODE_PROC_BODY:
+        case NODE_EVAL:
+        case NODE_ASSIGN:
         case NODE_RETURN:
+        case NODE_IF_COND: {
+            for (int i = 0; i < node->children.count; ++i) {
+                process_unit(id, node->children.data[i], mod, node);
+            }
+        }
+
+        case NODE_PROC_CALL: {
+            process_unit(id, node->children.data[0], mod, node);
+
+            for (int i = 1; i < node->children.count; ++i) {
+                Node *arg = node->children.data[i];
+
+                for (int i = 0; i < arg->children.count; ++i) {
+                    arg->children.data[i]->proc_id = arg->proc_id;
+                    arg->children.data[i]->scope = arg->scope;
+                }
+
+                if (arg->children.count >= 2) {
+                    process_unit(id, arg->children.data[1], mod, arg);
+                } else {
+                    process_unit(id, arg->children.data[0], mod, arg);
+                }
+            }
+        } break;
+
+        case NODE_IF_IF:
+        case NODE_IF_ELSE:
+        case NODE_PROC_BODY:
         case NODE_BLOCK: {
             int scope = scope_new(node->proc_id, node->scope, mod);
             for (int i = 0; i < node->children.count; ++i) {
                 node->children.data[i]->scope = scope;
+                process_unit(id, node->children.data[i], mod, node);
+            }
+        } break;
+
+        case NODE_IF: {
+            assert(node->children.count >= 1);
+
+            for (int i = 0; i < node->children.count; ++i) {
                 process_unit(id, node->children.data[i], mod, node);
             }
         } break;
@@ -572,6 +625,7 @@ void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
             l->name = name->data;
             l->len = name->len;
             l->value = value;
+            l->scope = node->scope;
 
             process_unit(id, value, mod, node);
         } break;
@@ -587,6 +641,7 @@ void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
             l->name = name->data;
             l->len = name->len;
             l->value = value;
+            l->scope = node->scope;
 
             process_unit(id, value, mod, node);
         } break;
@@ -595,8 +650,8 @@ void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
             int dep = 0;
 
             int arg = arg_from_name(node->data, node->len, mod, node->proc_id);
-            int loc = local_from_name(node->data, node->len, mod, node->proc_id, false);
-            int con = local_from_name(node->data, node->len, mod, node->proc_id, true);
+            int loc = local_from_name(node->data, node->len, mod, node->proc_id, node->scope, false);
+            int con = local_from_name(node->data, node->len, mod, node->proc_id, node->scope, true);
             if ((!!arg + !!loc + !!con) > 1) {
                 assert(false);
             }
@@ -730,54 +785,6 @@ void type_annotate(Node *node, Typed_Module *mod)
     for (int i = 1; i < mod->units.count; ++i) {
         process_unit(i, NULL, mod, NULL);
     }
-
-    #if 0
-    for (int i = 0; i < count; ++i) {
-        Node *unit = units[i];
-        
-        switch (unit->type) {
-            case NODE_CONST: {
-                assert(unit->children.count >= 2);
-                Node *name = unit->children.data[0];
-                Node *value = unit->children.data[1];
-                assert(name->len > 0);
-
-                Typed_Constant *c = mod_global_const_from_name(name->data, name->len, mod);
-                if (c) {
-                    error(name->loc, "Redefinition of `%.*s`.", name->len, name->data);
-                    error_exit(c->name->loc, "The other defintion is here.");
-                }
-
-                Typed_Constant *tc = append_zero(&mod->consts);
-                tc->name = name;
-                tc->value = value;
-
-                if (unit->children.count > 2) {
-                    int type = type_from_node(unit->children.data[2], mod);
-                    int inferred = type_infer_constant(value, mod);
-
-                    if (!type_can_cast_implicit(inferred, type, mod)) {
-                        char from_buf[64] = {0};
-                        char to_buf[64] = {0};
-                        type_repr(from_buf, ARRAY_COUNT(from_buf) - 1, inferred, mod);
-                        type_repr(to_buf, ARRAY_COUNT(to_buf) - 1, type, mod);
-                        error_exit(value->loc, "Cannot implicitly cast from %s to %s. Try to use an explicit cast: `cast(%s) value`", from_buf, to_buf, to_buf);
-                    }
-
-                    tc->type = type;
-                } else {
-                    int inferred = type_infer_constant(value, mod);
-                    tc->type = inferred;
-                }
-            } break;
-            // case NODE_VAR: {
-            // } break;
-            default: {
-                error_exit(unit->loc, "Invalid top-level statement.");
-            } break;
-        }
-    }
-    #endif
 }
 
 void print_type(int type, Typed_Module *mod)
