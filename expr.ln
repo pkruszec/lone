@@ -1,5 +1,8 @@
-x: float32 = 5;
+x: float32 = 5.32;
+a: **s32 = 0;
 y: s32 = 4;
 z: *s32 = 0;
-w: **s32 = cast(**s32) z;
-z: **s32 = 0;
+w: **s32 = cast(**s32) (cast(u64) 321.2);
+b: float32 = cast(float32) (cast(u64) w);
+
+// var s : s32 = 5;
