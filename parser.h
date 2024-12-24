@@ -73,9 +73,6 @@ struct Node {
     Node_Children children;
     char *data;
     int len;
-
-    int proc_id;
-    int scope;
 };
 
 struct Node_Block {
@@ -99,6 +96,8 @@ typedef struct {
 } Parser;
 
 const char *node_type(Node_Type type);
+Node *node_child(Node *node, int index);
+Node *node_unwrap(Node *node);
 
 Node *parser_parse_prog(Parser *parser);
 Node *parser_parse_stmt(Parser *parser);

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
@@ -59,739 +60,375 @@ void print_node(Node *node, int indent)
     fprintf(stdout, "\n");
     
     for (int i = 0; i < node->children.count; ++i) {
-        Node *child = node->children.data[i];
+        Node *child = node_child(node, i);
         print_node(child, indent + 2);
     }
 }
 
 typedef enum {
-    TYPE_VOID = 0,
-    TYPE_PTR,
-    TYPE_COMPTIME_INT,
-    TYPE_COMPTIME_FLOAT,
-    TYPE_BOOL,
-    TYPE_INT,
-    TYPE_FLOAT,
-} Type_Type;
-
-typedef enum {
-    UNIT_NIL = 0,
-    UNIT_CONSTANT,
-    UNIT_VARIABLE,
-    UNIT_PROC,
-} Unit_Type;
+    SYM_NONE = 0,
+    SYM_PROC,
+    SYM_GLOBAL_VAR,
+    SYM_GLOBAL_CONST,
+} Symbol_Type;
 
 typedef struct {
-    Type_Type type;
-    const char *name;
-    int len;
-    bool builtin;
-    union {
-        struct {
-            int to;
-        } p;
-        struct {
-            bool sign;
-            int size;
-        } i;
-        struct {
-            bool dbl;
-        } f;
-    };
-} Type;
-
-typedef struct {
-    Type *data;
-    int count;
-    int allocated;
-} Types;
-
-typedef struct {
-    const char *name;
-    int len;
-    int type;
-} Proc_Arg;
-
-typedef struct {
-    const char *name;
-    int len;
-    int type;
-    Node *value;
-    int scope;
-} Proc_Local;
-
-typedef struct {
-    Proc_Local *data;
-    int count;
-    int allocated;
-} Proc_Locals;
-
-typedef struct {
-    Proc_Locals locals;
-    Proc_Locals consts;
-    struct {
-        Proc_Arg *data;
-        int count;
-        int allocated;
-    } args;
-
-    Ints return_types;
-    Ints scope_parents;
-} Proc;
-
-typedef struct {
-    Unit_Type type;
+    String_View name;
+    Symbol_Type type;
     Node *node;
-    const char *name;
-    int len;
-    bool type_checked;
-    Ints dependencies;
-    union {
-        Proc proc;
-    };
-} Unit;
+} Symbol;
 
 typedef struct {
-    Unit *data;
+    Symbol *data;
     int count;
     int allocated;
-} Units;
+} Symbol_Table;
 
-typedef struct {
-    Types types;
-    Units units;
-} Typed_Module;
-
-const char *unit_type(Unit_Type type)
+void symbols_load_prog(Node *prog, Symbol_Table *st)
 {
-    switch (type) {
-        case UNIT_NIL: return "nil";
-        case UNIT_CONSTANT: return "constant";
-        case UNIT_VARIABLE: return "variable";
-        case UNIT_PROC: return "proc";
-    }
-    return "<invalid>";
-}
+    for (int i = 0; i < prog->children.count; ++i) {
+        Node *child = node_child(prog, i);
 
-Type *type_append_base(Typed_Module *mod, Type_Type tt, const char *name)
-{
-    Type *t = append_zero(&mod->types);
-    t->type = tt;
-    t->name = name;
-    t->len = strlen(name);
-    t->builtin = true;
-    return t;
-}
+        Symbol *sym = append_zero(st);
+        sym->node = child;
 
-Type *type_append_int(Typed_Module *mod, const char *name, bool sign, int size)
-{
-    Type *t = type_append_base(mod, TYPE_INT, name);
-    t->i.sign = sign;
-    t->i.size = size;
-    return t;
-}
-
-Type *type_append_float(Typed_Module *mod, const char *name, bool dbl)
-{
-    Type *t = type_append_base(mod, TYPE_FLOAT, name);
-    t->f.dbl = dbl;
-    return t;
-}
-
-void type_repr(char *buf, int max, int type, Typed_Module *mod)
-{
-    Type *t = &mod->types.data[type];
-    int len = 0;
-
-    #define P(x)                        \
-        do {                            \
-            if (len + 1 >= max) return; \
-            buf[len++] = (x);           \
-        } while (0)
-
-    if (t->type == TYPE_PTR) {
-        P('*');
-        type_repr(buf+len, max-len, t->p.to, mod);
-    } else {
-        for (int i = 0; i < t->len; ++i) {
-            P(t->name[i]);
+        switch (child->type) {
+            case NODE_CONST: {
+                Node *name = node_child(child, 0);
+                sym->type = SYM_GLOBAL_CONST;
+                sym->name = sv_make(name->data, name->len);
+            } break;
+            case NODE_PROC: {
+                Node *name = node_unwrap(node_child(child, 0));
+                sym->type = SYM_PROC;
+                sym->name = sv_make(name->data, name->len);
+            } break;
+            case NODE_VAR: {
+                Node *name = node_child(child, 0);
+                sym->type = SYM_GLOBAL_VAR;
+                sym->name = sv_make(name->data, name->len);
+            } break;
+            default: {
+                error_exit(child->loc, "Invalid top-level statement.");
+            } break;
         }
     }
-
-    #undef P
 }
 
-#if 0
-Typed_Constant *mod_global_const_from_name(const char *name, int len, Typed_Module *mod)
+typedef enum {
+    OP_NONE = 0,
+    OP_DEF_CONST,
+    OP_DEF_VAR,
+    OP_PROC,
+    OP_END,
+    OP_RET,
+    OP_MOV_IMM,
+    OP_MOV_REG,
+} Op_Type;
+
+typedef struct {
+    Op_Type type;
+    union {
+        struct {
+            String_View name;
+        } def;
+        struct {
+            String_View name;
+            int argc;
+            bool ret;
+        } proc;
+        struct {
+            int dst;
+            uint64_t imm;
+        } mov_imm;
+        struct {
+            int dst;
+            int src;
+        } mov_reg;
+    };
+} Op;
+
+typedef struct {
+    Op *data;
+    int count;
+    int allocated;
+
+    Symbol_Table *st;
+} Module;
+
+typedef struct {
+    String_View name;
+    int reg;
+    // bool indirect;
+} Binding;
+
+typedef struct {
+    Binding *data;
+    int count;
+    int allocated;
+
+    int reg;
+    int scope;
+    bool ret;
+} Bindings;
+
+Binding *binding_get(Bindings *bs, String_View name)
 {
-    for (int i = 0; i < mod->consts.count; ++i) {
-        Typed_Constant *c = &mod->consts.data[i];
-        if (c->name->len != len) continue;
-        if (strncmp(name, c->name->data, len)) continue;
-        return c;
+    for (int i = 0; i < bs->count; ++i) {
+        if (!sv_equal(bs->data[i].name, name)) continue;
+        return &bs->data[i];
     }
+
     return NULL;
 }
 
-int type_base_from_type(Type_Type tt, Typed_Module *mod)
+void compile_global_constant(Symbol *sym, Module *mod)
 {
-    for (int i = 0; i < mod->types.count; ++i) {
-        if (mod->types.data[i].type == tt) return i;
-    }
-
-    assert(false);
-    return 0;
+    append_value(mod, ((Op) {
+        .type = OP_DEF_CONST,
+        .def = { .name = sym->name },
+    }));
 }
 
-bool type_can_cast_explicit(int from, int to, Typed_Module *mod)
+void compile_global_var(Symbol *sym, Module *mod)
 {
-    if (from == to) return true;
-    Type *src = &mod->types.data[from];
-    Type *dst = &mod->types.data[to];
-
-    if (src->type == TYPE_COMPTIME_INT) {
-        if (dst->type == TYPE_INT) return true;
-        if (dst->type == TYPE_FLOAT) return true;
-        if (dst->type == TYPE_PTR) return true;
-    }
-
-    if (src->type == TYPE_COMPTIME_FLOAT) {
-        if (dst->type == TYPE_INT) return true;
-        if (dst->type == TYPE_FLOAT) return true;
-    }
-
-    if (src->type == TYPE_INT) {
-        if (dst->type == TYPE_PTR && !src->i.sign) return true;
-        if (dst->type == TYPE_INT) return true;
-        if (dst->type == TYPE_FLOAT) return true;
-    }
-
-    if (src->type == TYPE_FLOAT) {
-        if (dst->type == TYPE_INT) return true;
-        if (dst->type == TYPE_FLOAT) return true;
-    }
-
-    if (src->type == TYPE_PTR) {
-        if (dst->type == TYPE_INT) return true;
-    }
-
-    return false;
+    append_value(mod, ((Op) {
+        .type = OP_DEF_VAR,
+        .def = { .name = sym->name },
+    }));
 }
 
-bool type_can_cast_implicit(int from, int to, Typed_Module *mod)
+uint64_t compile_parse_base(Location loc, String_View full, String_View sv, int base)
 {
-    if (from == to) return true;
-    Type *src = &mod->types.data[from];
-    Type *dst = &mod->types.data[to];
-
-    if (src->type == TYPE_INT) {
-        if (dst->type != TYPE_INT) return false;
-        if (dst->i.size < src->i.size) return false;
+    int max = 20;
+    if (sv.count > max) {
+        error_exit(loc, "Integer literal too big for u64: `%.*s`.", sv_unwrap(full));
     }
 
-    if (src->type == TYPE_FLOAT) {
-        if (dst->type != TYPE_FLOAT && src->f.dbl != dst->f.dbl) return false;
+    uint64_t x = 0;
+    uint64_t m = 1;
+    for (int i = sv.count - 1; i >= 0; --i) {
+        char c = sv.data[i];
+
+        if (!(is_digit(c) || (base == 16 && is_hex_digit(c)))) {
+            error_exit(loc, "Invalid integer literal of base %d `%.*s`.", base, sv_unwrap(full));
+        }
+
+        int digit = base == 16 ? get_hex_digit(c) : (c - '0');
+        if (digit >= base) {
+            error_exit(loc, "Digit too big for base %d: `%c`.", base, c);
+        }
+
+        x += digit * m;
+        m *= base;
     }
 
-    return type_can_cast_explicit(from, to, mod);
+    return x;
 }
 
-int type_infer_literal(Node *node, Typed_Module *mod)
+uint64_t compile_parse_num(Location loc, String_View sv)
 {
-    switch (node->type) {
+    assert(sv.count >= 1);
+
+    if (sv_has(sv, '.') >= 0) {
+        error_exit(loc, "Float literals are unimplemented.");
+    }
+
+    int base = 10;
+
+    if (sv.data[0] == '0' && sv.count >= 2) {
+        if (sv.data[1] == 'x') {
+            base = 16;
+        } else if (sv.data[1] == 'o') {
+            base = 8;
+        } else if (sv.data[1] == 'b') {
+            base = 2;
+        } else {
+            error_exit(loc, "Invalid base specifier `%c`. Allowed base specifiers are 16 (0x), 8 (0o), 2 (0b).");
+        }
+
+        sv.count -= 2;
+        sv.data += 2;
+
+        if (sv.count < 1) {
+            error_exit(loc, "Expected a number after its base: `%.*s`.");
+        }
+    }
+
+    return compile_parse_base(loc, sv, sv, base);
+}
+
+void compile_expr(int dst, Node *expr, Module *mod, Bindings *bs)
+{
+    switch (expr->type) {
         case NODE_NUM: {
-            bool has_point = false;
-            for (int i = 0; i < node->len; ++i) {
-                if (node->data[i] == '.') {
-                    has_point = true;
-                    break;
-                }
-            }
+            uint64_t imm = compile_parse_num(expr->loc, sv_make(expr->data, expr->len));
 
-            if (has_point)
-                return type_base_from_type(TYPE_COMPTIME_FLOAT, mod);
-            else
-                return type_base_from_type(TYPE_COMPTIME_INT, mod);
-        };
-        default: break;
-    }
-
-    error_exit(node->loc, "Unimplemented literal.");
-    return 0;
-}
-
-int type_infer_constant(Node *node, Typed_Module *mod)
-{
-    switch (node->type) {
-        case NODE_CHAR:
-        case NODE_STR:
-        case NODE_NUM: {
-            return type_infer_literal(node, mod);
+            append_value(mod, ((Op) {
+                .type = OP_MOV_IMM,
+                .mov_imm = {
+                    .dst = dst,
+                    .imm = imm,
+                },
+            }));
         } break;
-
         case NODE_IDENT: {
-            char *name = node->data;
-            int len = node->len;
-
-            Typed_Constant *c = mod_global_const_from_name(name, len, mod);
-            if (c) return c->type;
-
-            error_exit(node->loc, "Undeclared identifier `%.*s`. Keep in mind that constants must be defined higher than their usage.", len, name);
-        } break;
-
-        case NODE_CAST: {
-            assert(node->children.count >= 2);
-            int casting_type = type_from_node(node->children.data[0], mod);
-            int casted_type = type_infer_constant(node->children.data[1], mod);
-
-            if (type_can_cast_explicit(casted_type, casting_type, mod)) {
-                return casting_type;
+            Binding *b = binding_get(bs, sv_make(expr->data, expr->len));
+            
+            if (b) {
+                append_value(mod, ((Op) {
+                    .type = OP_MOV_REG,
+                    .mov_reg = {
+                        .dst = dst,
+                        .src = b->reg,
+                    },
+                }));
+            } else {
+                assert(!"TODO");
             }
 
-            char from_buf[64] = {0};
-            char to_buf[64] = {0};
-            type_repr(from_buf, ARRAY_COUNT(from_buf) - 1, casted_type, mod);
-            type_repr(to_buf, ARRAY_COUNT(to_buf) - 1, casting_type, mod);
-
-            error_exit(node->loc, "Cannot cast %s to %s.", from_buf, to_buf);
-        } break;
-        default: break;
-    }
-
-    error_exit(node->loc, "Syntactically incorrect expressions should have been catched in the parsing stage. This is a compiler bug.");
-    return 0;
-}
-#endif
-
-int type_from_node(Node *node, Typed_Module *mod)
-{
-    switch (node->type) {
-        case NODE_IDENT: {
-            for (int i = 0; i < mod->types.count; ++i) {
-                Type *type = &mod->types.data[i];
-                if (type->len != node->len) continue;
-                if (strncmp(type->name, node->data, type->len) == 0) {
-                    return i;
-                }
-            }
-        } break;
-        case NODE_T_PTR: {
-            assert(node->children.count >= 1);
-            Node *ptr_to = node->children.data[0];
-            int tfn = type_from_node(ptr_to, mod);
-
-            for (int i = 0; i < mod->types.count; ++i) {
-                Type *type = &mod->types.data[i];
-                if (type->type != TYPE_PTR) continue;
-                if (tfn != type->p.to) continue;
-
-                return i;
-            }
-
-            Type *t = append_zero(&mod->types);
-            t->type = TYPE_PTR;
-            t->p.to = tfn;
-            return mod->types.count - 1;
         } break;
         default: {
-            error_exit(node->loc, "Syntactically incorrect type annotations should have been catched in the parsing stage. This is a compiler bug.");
+            error_exit(expr->loc, "Unimplemented expression %s.", node_type(expr->type));
         } break;
     }
-
-    error_exit(node->loc, "Unknown type `%.*s`.", node->len, node->data);
-    return 0;
 }
 
-Unit *unit_ref(int id, Typed_Module *mod)
+void compile_stmt(Node *stmt, Module *mod, Bindings *bs)
 {
-    return &mod->units.data[id];
-}
-
-int arg_from_name(const char *name, int len, Typed_Module *mod, int proc_id)
-{
-    if (!proc_id) return 0;
-    Proc *proc = &unit_ref(proc_id, mod)->proc;
-    for (int i = 0; i < proc->args.count; ++i) {
-        Proc_Arg *item = &proc->args.data[i];
-        if (item->len != len) continue;
-        if (strncmp(item->name, name, len) != 0) continue;
-        return i;
-    }
-
-    return 0;
-}
-
-bool scope_is_child(Typed_Module *mod, int proc_id, int scope, int parent)
-{
-    if (scope == parent) return true;
-    Proc *proc = &unit_ref(proc_id, mod)->proc;
-
-    int c = scope;
-    while (true) {
-        int p = proc->scope_parents.data[c];
-        if (p == parent) return true;
-        c = p;
-        if (c == 0) break;
-    }
-
-    return false;
-}
-
-int local_from_name(const char *name, int len, Typed_Module *mod, int proc_id, int scope, bool do_constants)
-{
-    if (!proc_id) return 0;
-    Proc *proc = &unit_ref(proc_id, mod)->proc;
-
-    Proc_Locals *array = do_constants ? &proc->locals : &proc->consts;
-
-    for (int i = 0; i < array->count; ++i) {
-        Proc_Local *item = &array->data[i];
-        if (item->len != len) continue;
-        if (strncmp(item->name, name, len) != 0) continue;
-        if (!scope_is_child(mod, proc_id, scope, item->scope)) continue;
-        return i;
-    }
-
-    return 0;
-}
-
-int unit_from_name(const char *name, int len, Typed_Module *mod)
-{
-    for (int i = 0; i < mod->units.count; ++i) {
-        Unit *u = &mod->units.data[i];
-        if (u->len != len) continue;
-        if (strncmp(u->name, name, len) != 0) continue;
-        return i;
-    }
-    return 0;
-}
-
-int scope_new(int proc_id, int parent, Typed_Module *mod)
-{
-    assert(proc_id != 0);
-    Proc *proc = &unit_ref(proc_id, mod)->proc;
-    int *buf = append(&proc->scope_parents);
-    *buf = parent;
-    return proc->scope_parents.count - 1;
-}
-
-void process_unit(int id, Node *node, Typed_Module *mod, Node *parent)
-{
-    Unit *u = unit_ref(id, mod);
-    if (!node) node = u->node;
-
-    if (!parent) {
-        switch (node->type) {
-            case NODE_CONST:
-            case NODE_VAR: {
-                Node *value = node->children.data[1];
-                process_unit(id, value, mod, node);
-            } break;
-            case NODE_PROC: {
-                node->proc_id = id;
-                for (int i = 0; i < node->children.count; ++i) {
-                    node->children.data[i]->proc_id = node->proc_id;
-                }
-
-                append_zero(&u->proc.args);
-                append_zero(&u->proc.locals);
-                append_zero(&u->proc.consts);
-                append_zero(&u->proc.scope_parents);
-
-                Node *call = node->children.data[0];
-                Node *ret_type = NULL;
-                Node *body = NULL;
-
-                if (node->children.count >= 3) {
-                    ret_type = node->children.data[1];
-                    body = node->children.data[2];
-                } else if (node->children.count >= 2) {
-                    Node *snd = node->children.data[1];
-                    if (snd->type == NODE_PROC_RETVAL) {
-                        ret_type = snd;
-                    } else if (snd->type == NODE_PROC_BODY) {
-                        body = snd;
-                    } else {
-                        assert(false);
-                    }
-                }
-
-                (void)ret_type;
-
-                for (int i = 1; i < call->children.count; ++i) {
-                    Node *an = call->children.data[i];
-                    Node *name = NULL;
-                    Node *type = NULL;
-
-                    if (an->children.count >= 2) {
-                        name = an->children.data[0];
-                        type = an->children.data[1];
-                    } else {
-                        type = an->children.data[0];
-                    }
-
-                    if (name->type != NODE_IDENT) {
-                        error_exit(name->loc, "Argument name must be an identifier.");
-                    }
-
-                    Proc_Arg *arg = append_zero(&u->proc.args);
-                    arg->type = type_from_node(type, mod);
-                    if (name) {
-                        arg->name = name->data;
-                        arg->len = name->len;
-                    }
-                }
-
-                if (body) {
-                    body->scope = scope_new(body->proc_id, node->scope, mod);
-                    process_unit(id, body, mod, node);
-                }
-            } break;
-            default: {
-                error_exit(node->loc, "Invalid top-level statement.");
-            } break;
-        }
-
-        return;
-    }
-
-    if (node->proc_id) {
-        for (int i = 0; i < node->children.count; ++i) {
-            node->children.data[i]->proc_id = node->proc_id;
-        }
-    }
-    if (node->scope) {
-        for (int i = 0; i < node->children.count; ++i) {
-            node->children.data[i]->scope = node->scope;
-        }
-    }
-
-    switch (node->type) {
-        case NODE_EVAL:
-        case NODE_ASSIGN:
-        case NODE_RETURN:
-        case NODE_IF_COND: {
-            for (int i = 0; i < node->children.count; ++i) {
-                process_unit(id, node->children.data[i], mod, node);
-            }
-        }
-
-        case NODE_PROC_CALL: {
-            process_unit(id, node->children.data[0], mod, node);
-
-            for (int i = 1; i < node->children.count; ++i) {
-                Node *arg = node->children.data[i];
-
-                for (int i = 0; i < arg->children.count; ++i) {
-                    arg->children.data[i]->proc_id = arg->proc_id;
-                    arg->children.data[i]->scope = arg->scope;
-                }
-
-                if (arg->children.count >= 2) {
-                    process_unit(id, arg->children.data[1], mod, arg);
-                } else {
-                    process_unit(id, arg->children.data[0], mod, arg);
-                }
-            }
-        } break;
-
-        case NODE_IF_IF:
-        case NODE_IF_ELSE:
-        case NODE_PROC_BODY:
+    switch (stmt->type) {
         case NODE_BLOCK: {
-            int scope = scope_new(node->proc_id, node->scope, mod);
-            for (int i = 0; i < node->children.count; ++i) {
-                node->children.data[i]->scope = scope;
-                process_unit(id, node->children.data[i], mod, node);
+            int scope = bs->scope;
+            bs->scope = bs->reg;
+            for (int i = 0; i < stmt->children.count; ++i) {
+                compile_stmt(node_child(stmt, i), mod, bs);
+            }
+            bs->scope = scope;
+        } break;
+        case NODE_RETURN: {
+            if (stmt->children.count == 0) {
+                append_value(mod, ((Op) {.type = OP_RET}));
+            } else {
+                assert(bs->ret);
+                int dst_reg = 0;
+                compile_expr(dst_reg, node_unwrap(stmt), mod, bs);
+                append_value(mod, ((Op) {.type = OP_RET}));
             }
         } break;
-
-        case NODE_IF: {
-            assert(node->children.count >= 1);
-
-            for (int i = 0; i < node->children.count; ++i) {
-                process_unit(id, node->children.data[i], mod, node);
-            }
-        } break;
-
-        case NODE_VAR: {
-            Node *name = node->children.data[0];
-            Node *value = node->children.data[1];
-            assert(node->proc_id);
-            // TODO: Types
-
-            Proc *proc = &unit_ref(node->proc_id, mod)->proc;
-            Proc_Local *l = append_zero(&proc->locals);
-            l->name = name->data;
-            l->len = name->len;
-            l->value = value;
-            l->scope = node->scope;
-
-            process_unit(id, value, mod, node);
-        } break;
-
-        case NODE_CONST: {
-            Node *name = node->children.data[0];
-            Node *value = node->children.data[1];
-            assert(node->proc_id);
-            // TODO: Types
-
-            Proc *proc = &unit_ref(node->proc_id, mod)->proc;
-            Proc_Local *l = append_zero(&proc->consts);
-            l->name = name->data;
-            l->len = name->len;
-            l->value = value;
-            l->scope = node->scope;
-
-            process_unit(id, value, mod, node);
-        } break;
-
-        case NODE_IDENT: {
-            int dep = 0;
-
-            int arg = arg_from_name(node->data, node->len, mod, node->proc_id);
-            int loc = local_from_name(node->data, node->len, mod, node->proc_id, node->scope, false);
-            int con = local_from_name(node->data, node->len, mod, node->proc_id, node->scope, true);
-            if ((!!arg + !!loc + !!con) > 1) {
-                assert(false);
-            }
-
-            if (arg || loc || con) break;
-
-            dep = unit_from_name(node->data, node->len, mod);
-
-            if (dep == 0) {
-                error_exit(node->loc, "Undeclared identifier `%.*s`.", node->len, node->data);
-            }
-
-            bool has_it_already = false;
-            for (int i = 0; i < u->dependencies.count; ++i) {
-                if (u->dependencies.data[i] == dep) {
-                    has_it_already = true;
-                    break;
-                }
-            }
-
-            // TODO: Should we allow self-references in this step?
-            // When should they be catched?
-            // if (dep != id)
-            if (!has_it_already) *append(&u->dependencies) = dep;
-        } break;
-
-        case NODE_MUL:
-        case NODE_DIV:
-        case NODE_MOD:
-        case NODE_ADD:
-        case NODE_SUB:
-        case NODE_EQUAL:
-        case NODE_NOT_EQUAL: {
-            Node *lhs = node->children.data[0];
-            Node *rhs = node->children.data[1];
-            process_unit(id, lhs, mod, node);
-            process_unit(id, rhs, mod, node);
-        } break;
-
-        case NODE_NUM:
-        case NODE_STR:
-        case NODE_CHAR:
-            break;
-
         default: {
-            error_exit(node->loc, "Unimplemented unit %s.", node_type(node->type));
+            error_exit(stmt->loc, "Unimplemented statement %s.", node_type(stmt->type));
         } break;
     }
 }
 
-void type_annotate(Node *node, Typed_Module *mod)
+void compile_proc(Symbol *sym, Module *mod)
 {
-    Node **units = node->children.data;
-    int count = node->children.count;
+    Node *proc = sym->node;
+    Node *call = node_child(proc, 0);
+    Node *ret  = NULL;
+    Node *body = NULL;
 
-    type_append_base(mod, TYPE_VOID, "void");
-    type_append_base(mod, TYPE_COMPTIME_INT, "comptime_int");
-    type_append_base(mod, TYPE_COMPTIME_FLOAT, "comptime_float");
-    type_append_base(mod, TYPE_BOOL, "bool");
-
-    type_append_int(mod, "s8", true, 1);
-    type_append_int(mod, "s16", true, 2);
-    type_append_int(mod, "s32", true, 4);
-    type_append_int(mod, "s64", true, 8);
-    type_append_int(mod, "u8", false, 1);
-    type_append_int(mod, "u16", false, 2);
-    type_append_int(mod, "u32", false, 4);
-    type_append_int(mod, "u64", false, 8);
-    type_append_float(mod, "float32", false);
-    type_append_float(mod, "float64", true);
-
-    // TODO: Add all compiler-defined type aliases, like int
-
-    // Append nil unit.
-    // This will help when we want to always return a valid unit 
-    append_zero(&mod->units);
-
-    for (int i = 0; i < count; ++i) {
-        Node *node = units[i];
-        Unit *unit = append_zero(&mod->units);
-        assert(node->children.count >= 1);
-
-        // TODO: Fetch all user-defined types
-        switch (node->type) {
-            case NODE_CONST: {
-                Node *name_node = node->children.data[0];
-
-                unit->type = UNIT_CONSTANT;
-                unit->node = node;
-                unit->name = name_node->data;
-                unit->len = name_node->len;
-            } break;
-            case NODE_VAR: {
-                Node *name_node = node->children.data[0];
-
-                unit->type = UNIT_VARIABLE;
-                unit->node = node;
-                unit->name = name_node->data;
-                unit->len = name_node->len;
-            } break;
-            case NODE_PROC: {
-                Node *call = node->children.data[0];
-                assert(call->children.count >= 1);
-
-                unit->type = UNIT_PROC;
-                unit->node = node;
-                unit->name = call->children.data[0]->data;
-                unit->len = call->children.data[0]->len;
-            } break;
-            default: {
-                error_exit(node->loc, "This statement cannot be used as a top-level statement.");
-            } break;
-        }
-
-        // Check for redefinitions.
-        for (int i = 1; i < mod->units.count - 1; ++i) {
-            Unit *u = &mod->units.data[i];
-            if (u->len != unit->len) continue;
-            if (strncmp(u->name, unit->name, unit->len) != 0) continue;
-            error(unit->node->loc, "Redefinition of `%.*s`.", unit->len, unit->name);
-            note(u->node->loc, "Previous definition is here.");
-
-            if (u->type == UNIT_PROC && unit->type == UNIT_PROC) {
-                note(unit->node->loc, "In this language we don't forward-declare anything.");
-            }
-
-            compiler_fatal();
-        }
+    if (proc->children.count == 3) {
+        ret = node_child(proc, 1);
+        body = node_child(proc, 2);
+    } else if (proc->children.count == 2) {
+        Node *snd = node_child(proc, 1);
+        if (snd->type == NODE_PROC_RETVAL)
+            ret = snd;
+        else
+            body = snd;
     }
 
-    for (int i = 1; i < mod->units.count; ++i) {
-        process_unit(i, NULL, mod, NULL);
+    assert(body != NULL);
+    ret = node_unwrap(ret);
+    body = node_unwrap(body);
+
+    int argc = call->children.count - 1;
+
+    Op *op_proc = append_value(mod, ((Op) {
+        .type = OP_PROC,
+        .proc = { .name = sym->name, .ret = !!ret, .argc = argc },
+    }));
+
+    Bindings bindings = {0};
+    if (ret) {
+        bindings.ret = true;
+        bindings.reg = 1;
+        bindings.scope = 1;
+    }
+
+    for (int i = 1; i < call->children.count; ++i) {
+        Node *cc = node_child(call, i);
+        if (cc->children.count < 2) continue;
+
+        Node *arg = node_child(cc, 0);
+        assert(arg->type == NODE_IDENT);
+
+        append_value(&bindings, ((Binding) {
+            .name = sv_make(arg->data, arg->len),
+            .reg = bindings.reg,
+            // .indirect = false,
+        }));
+
+        bindings.reg++;
+    }
+
+    compile_stmt(body, mod, &bindings);
+
+    // for (int i = 0; i < bindings.count; ++i) {
+    //     Binding *b = &bindings.data[i];
+    //     printf("binding %.*s -> %d\n", sv_unwrap(b->name), b->reg);
+    // }
+
+    append_value(mod, ((Op) {.type = OP_END}));
+}
+
+void compile_prog(Module *mod)
+{
+    Symbol_Table *st = mod->st;
+    for (int i = 0; i < st->count; ++i) {
+        Symbol *sym = &st->data[i];
+        switch (sym->type) {
+            case SYM_GLOBAL_CONST: {
+                compile_global_constant(sym, mod);
+            } break;
+            case SYM_GLOBAL_VAR: {
+                compile_global_var(sym, mod);
+            } break;
+            case SYM_PROC: {
+                compile_proc(sym, mod);
+            } break;
+            default: break;
+        }
     }
 }
 
-void print_type(int type, Typed_Module *mod)
+void print_mod(Module *mod)
 {
-    char buf[64] = {0};
-    type_repr(buf, ARRAY_COUNT(buf) - 1, type, mod);
-    fprintf(stderr, "%s\n", buf);
+    int indent = 0;
+    int step = 2;
+
+    for (int i = 0; i < mod->count; ++i) {
+        Op *op = &mod->data[i];
+
+        if (op->type == OP_END) indent -= step;
+        for (int j = 0; j < indent; ++j)
+            fputc(' ', stdout);
+        if (op->type == OP_PROC) indent += step;
+
+        switch (op->type) {
+            case OP_NONE: printf("nop"); break;
+            case OP_DEF_CONST: printf("defconst %.*s", sv_unwrap(op->def.name)); break;
+            case OP_DEF_VAR: printf("defvar %.*s", sv_unwrap(op->def.name)); break;
+            case OP_PROC: printf("proc %.*s %d %s", sv_unwrap(op->proc.name), op->proc.argc, op->proc.ret ? "ret" : ""); break;
+            case OP_END: printf("end"); break;
+            case OP_RET: printf("ret"); break;
+            case OP_MOV_IMM: printf("mov_imm R%d <- %llu", op->mov_imm.dst, op->mov_imm.imm); break;
+            case OP_MOV_REG: printf("mov_reg R%d <- R%d", op->mov_reg.dst, op->mov_reg.src); break;
+        }
+
+        fputc('\n', stdout);
+    }
 }
 
 int main(int argc, char **argv)
@@ -828,38 +465,20 @@ int main(int argc, char **argv)
     parser.token_count = tokens.count;
 
     Node *node = parser_parse_prog(&parser);
-    // print_node(node, 0);
+    print_node(node, 0);
 
-    Typed_Module mod = {0};
-    type_annotate(node, &mod);
+    Symbol_Table st = {0};
+    symbols_load_prog(node, &st);
 
-    #if 0
-    // Types
-    for (int i = 0; i < mod.types.count; ++i) {
-        fprintf(stderr, "%d: ", i);
-        print_type(i, &mod);
-    }
-    #endif
+    // for (int i = 0; i < st.count; ++i) {
+    //     printf("%.*s\n", st.data[i].name.count, st.data[i].name.data);
+    // }
 
-    #if 1
-    // Units
+    Module mod = {0};
+    mod.st = &st;
+    compile_prog(&mod);
 
-    printf("digraph {\n");
-    for (int i = 1; i < mod.units.count; ++i) {
-        Unit *u = &mod.units.data[i];
-        if (u->dependencies.count < 1) continue;
+    print_mod(&mod);
 
-        printf("%.*s -> {", u->len, u->name);
-        for (int j = 0; j < u->dependencies.count; ++j) {
-            if (j > 0) printf(" ");
-            Unit *d = unit_ref(u->dependencies.data[j], &mod);
-            printf("%.*s", d->len, d->name);
-        }
-        printf("}\n");
-    }
-    printf("}\n");
-
-    #endif
-    
     return 0;
 }

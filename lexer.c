@@ -56,6 +56,22 @@ bool is_digit(char c)
     return c >= '0' && c <= '9';
 }
 
+bool is_hex_digit(char c)
+{
+    return ((c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F'));
+}
+
+int get_hex_digit(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+    if (c >= 'A' && c <= 'F') return 10 + c - 'A';
+    assert(false);
+    return 0;
+}
+
 bool is_operator(char *str, int count, char c)
 {
     for (int i = 0; i < (int)ARRAY_COUNT(operators); ++i) {
@@ -413,3 +429,5 @@ void lexer_next(Lexer *lex, Token *tok)
     tok->loc = lex->loc;
     tok->type = TOKEN_EOF; 
 }
+
+// TODO: Lexer reports unterminated block comment when comment closing token is just at the end of the file

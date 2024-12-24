@@ -60,6 +60,10 @@ typedef struct {
     Location loc;
 } Lexer;
 
+bool is_digit(char c);
+bool is_hex_digit(char c);
+int get_hex_digit(char c);
+
 const char *token_type(Token_Type t);
 void token_repr(char *buf, int max, Token *tok);
 void lexer_next(Lexer *lex, Token *tok);

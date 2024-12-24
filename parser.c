@@ -8,6 +8,18 @@ const char *node_type(Node_Type type)
     return "<invalid>";
 }
 
+Node *node_child(Node *node, int index)
+{
+    if (node == NULL) return NULL;
+    assert(node->children.count > index);
+    return node->children.data[index];
+}
+
+Node *node_unwrap(Node *node)
+{
+    return node_child(node, 0);
+}
+
 void node_append_child(Node *node, Node *child)
 {
     Node **buf = append(&node->children);
