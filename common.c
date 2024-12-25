@@ -6,10 +6,9 @@ void msg(const char *compiler_file, int compiler_line, const char *mode, Locatio
         fprintf(stderr, "%s:%d: ", compiler_file, compiler_line);
     }
     
-    if (loc.path)
+    if (loc.path) {
         fprintf(stderr, "%s:%d:%d: ", loc.path, loc.line + 1, loc.col + 1);
-    else
-        fprintf(stderr, "%d:%d: ", loc.line + 1, loc.col + 1);
+    }
 
     fprintf(stderr, "%s: ", mode);
     va_list args;

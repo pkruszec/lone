@@ -26,7 +26,7 @@ void stretch_buffer(int sz, void **data, int *allocated, int *count, int add);
 #define append_many_zero(a, c) (memset(append_many(a, c), 0, sizeof(*(a)->data) * (c)))
 #define append(a)              (append_many(a, 1))
 #define append_zero(a)         (append_many_zero(a, 1))
-#define append_value(a, v)     (append(a), (a)->data[(a)->count - 1] = (v), &(a)->data[(a)->count - 1])
+#define append_value(a, v)     (append(a), (a)->data[(a)->count - 1] = (v), (a)->count - 1)
 
 typedef struct {
     int *data;

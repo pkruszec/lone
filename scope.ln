@@ -2,8 +2,22 @@
 // b := a*a;
 // var c := a + b;
 
-proc test(x: s32) -> s32 {
-    return x;
+proc test() -> s32 {
+    var x: s32 = 0;
+    var y: s32 = 0;
+    var b: s32 = 4;
+
+    {
+        var a := 6;
+        x = a + b;
+    }
+    
+    {
+        var a := 10;
+        y = a + b;
+    }
+
+    return x + y;
 }
 
 /*

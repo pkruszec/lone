@@ -124,6 +124,7 @@ typedef enum {
     OP_RET,
     OP_MOV_IMM,
     OP_MOV_REG,
+    OP_ADD,
 } Op_Type;
 
 typedef struct {
@@ -135,16 +136,17 @@ typedef struct {
         struct {
             String_View name;
             int argc;
+            int min_regs;
             bool ret;
         } proc;
         struct {
             int dst;
             uint64_t imm;
-        } mov_imm;
+        } imm;
         struct {
             int dst;
             int src;
-        } mov_reg;
+        } reg;
     };
 } Op;
 
@@ -169,6 +171,7 @@ typedef struct {
 
     int reg;
     int scope;
+    int max;
     bool ret;
 } Bindings;
 
@@ -180,6 +183,14 @@ Binding *binding_get(Bindings *bs, String_View name)
     }
 
     return NULL;
+}
+
+int push_reg(Bindings *bs)
+{
+    int reg = bs->reg;
+    bs->reg++;
+    if (bs->reg > bs->max) bs->max = bs->reg;
+    return reg;
 }
 
 void compile_global_constant(Symbol *sym, Module *mod)
@@ -266,7 +277,7 @@ void compile_expr(int dst, Node *expr, Module *mod, Bindings *bs)
 
             append_value(mod, ((Op) {
                 .type = OP_MOV_IMM,
-                .mov_imm = {
+                .imm = {
                     .dst = dst,
                     .imm = imm,
                 },
@@ -278,9 +289,63 @@ void compile_expr(int dst, Node *expr, Module *mod, Bindings *bs)
             if (b) {
                 append_value(mod, ((Op) {
                     .type = OP_MOV_REG,
-                    .mov_reg = {
+                    .reg = {
                         .dst = dst,
                         .src = b->reg,
+                    },
+                }));
+            } else {
+                assert(!"TODO");
+            }
+        } break;
+        case NODE_ADD: {
+            Node *lhs = node_child(expr, 0);
+            Node *rhs = node_child(expr, 1);
+
+            int r0 = push_reg(bs);
+            int r1 = push_reg(bs);
+            compile_expr(r0, lhs, mod, bs);
+            compile_expr(r1, rhs, mod, bs);
+
+            append_value(mod, ((Op) {
+                .type = OP_ADD,
+                .reg = {
+                    .dst = r0,
+                    .src = r1,
+                },
+            }));
+            append_value(mod, ((Op) {
+                .type = OP_MOV_REG,
+                .reg = {
+                    .dst = dst,
+                    .src = r0,
+                },
+            }));
+        } break;
+        default: {
+            error_exit(expr->loc, "Unimplemented expression %s.", node_type(expr->type));
+        } break;
+    }
+}
+
+void compile_assign(Node *dst, Node *src, Module *mod, Bindings *bs)
+{
+    // TODO: Non-register types
+    int reg = push_reg(bs);
+    compile_expr(reg, src, mod, bs);
+
+    switch (dst->type) {
+        case NODE_IDENT: {
+            compile_expr(reg, src, mod, bs);
+
+            Binding *b = binding_get(bs, sv_make(dst->data, dst->len));
+            
+            if (b) {
+                append_value(mod, ((Op) {
+                    .type = OP_MOV_REG,
+                    .reg = {
+                        .dst = b->reg,
+                        .src = reg,
                     },
                 }));
             } else {
@@ -289,8 +354,8 @@ void compile_expr(int dst, Node *expr, Module *mod, Bindings *bs)
 
         } break;
         default: {
-            error_exit(expr->loc, "Unimplemented expression %s.", node_type(expr->type));
-        } break;
+            error_exit(dst->loc, "Unimplemented assignment form %s.", node_type(dst->type));
+        }
     }
 }
 
@@ -299,11 +364,31 @@ void compile_stmt(Node *stmt, Module *mod, Bindings *bs)
     switch (stmt->type) {
         case NODE_BLOCK: {
             int scope = bs->scope;
+            int count = bs->count;
             bs->scope = bs->reg;
             for (int i = 0; i < stmt->children.count; ++i) {
                 compile_stmt(node_child(stmt, i), mod, bs);
             }
             bs->scope = scope;
+            bs->count = count;
+        } break;
+        case NODE_VAR: {
+            Node *name = node_child(stmt, 0);
+            Node *value = node_child(stmt, 1);
+
+            int reg = push_reg(bs);
+            append_value(bs, ((Binding) {
+                .name = sv_make(name->data, name->len),
+                .reg = reg,
+                // .indirect = false,
+            }));
+
+            compile_expr(reg, value, mod, bs);
+        } break;
+        case NODE_ASSIGN: {
+            Node *dst = node_child(stmt, 0);
+            Node *src = node_child(stmt, 1);
+            compile_assign(dst, src, mod, bs);
         } break;
         case NODE_RETURN: {
             if (stmt->children.count == 0) {
@@ -345,7 +430,7 @@ void compile_proc(Symbol *sym, Module *mod)
 
     int argc = call->children.count - 1;
 
-    Op *op_proc = append_value(mod, ((Op) {
+    int op_proc = append_value(mod, ((Op) {
         .type = OP_PROC,
         .proc = { .name = sym->name, .ret = !!ret, .argc = argc },
     }));
@@ -353,9 +438,9 @@ void compile_proc(Symbol *sym, Module *mod)
     Bindings bindings = {0};
     if (ret) {
         bindings.ret = true;
-        bindings.reg = 1;
-        bindings.scope = 1;
     }
+    push_reg(&bindings);
+    bindings.scope = 1;
 
     for (int i = 1; i < call->children.count; ++i) {
         Node *cc = node_child(call, i);
@@ -364,16 +449,16 @@ void compile_proc(Symbol *sym, Module *mod)
         Node *arg = node_child(cc, 0);
         assert(arg->type == NODE_IDENT);
 
+        int reg = push_reg(&bindings);
         append_value(&bindings, ((Binding) {
             .name = sv_make(arg->data, arg->len),
-            .reg = bindings.reg,
+            .reg = reg,
             // .indirect = false,
         }));
-
-        bindings.reg++;
     }
 
     compile_stmt(body, mod, &bindings);
+    mod->data[op_proc].proc.min_regs = bindings.max + 1;
 
     // for (int i = 0; i < bindings.count; ++i) {
     //     Binding *b = &bindings.data[i];
@@ -411,6 +496,8 @@ void print_mod(Module *mod)
     for (int i = 0; i < mod->count; ++i) {
         Op *op = &mod->data[i];
 
+        printf("%03X  ", i);
+
         if (op->type == OP_END) indent -= step;
         for (int j = 0; j < indent; ++j)
             fputc(' ', stdout);
@@ -420,15 +507,56 @@ void print_mod(Module *mod)
             case OP_NONE: printf("nop"); break;
             case OP_DEF_CONST: printf("defconst %.*s", sv_unwrap(op->def.name)); break;
             case OP_DEF_VAR: printf("defvar %.*s", sv_unwrap(op->def.name)); break;
-            case OP_PROC: printf("proc %.*s %d %s", sv_unwrap(op->proc.name), op->proc.argc, op->proc.ret ? "ret" : ""); break;
+            case OP_PROC: printf("proc %.*s %d %d %s", sv_unwrap(op->proc.name), op->proc.argc, op->proc.min_regs, op->proc.ret ? "ret" : ""); break;
             case OP_END: printf("end"); break;
             case OP_RET: printf("ret"); break;
-            case OP_MOV_IMM: printf("mov_imm R%d <- %llu", op->mov_imm.dst, op->mov_imm.imm); break;
-            case OP_MOV_REG: printf("mov_reg R%d <- R%d", op->mov_reg.dst, op->mov_reg.src); break;
+            case OP_MOV_IMM: printf("imm R%d <- %llu", op->imm.dst, op->imm.imm); break;
+            case OP_MOV_REG: printf("reg R%d <- R%d", op->reg.dst, op->reg.src); break;
+            case OP_ADD: printf("add R%d <- R%d", op->reg.dst, op->reg.src); break;
         }
 
         fputc('\n', stdout);
     }
+}
+
+uint64_t exec_proc(Module *mod, uint64_t *args, uint64_t ip, int depth)
+{
+    uint64_t regs[128] = {0};
+
+    Op *proc = &mod->data[ip];
+    // TODO: actual error messages
+    assert(proc->type == OP_PROC);
+    assert(proc->proc.min_regs <= (int)ARRAY_COUNT(regs));
+    assert(proc->proc.min_regs >= 1);
+    assert(ip < (uint64_t)mod->count - 1);
+    
+    int max = 1000;
+    if (depth > max) {
+        error_exit(((Location){0}), "Max recursion depth exceeded (%d) in procedure `%.*s`.", max, sv_unwrap(proc->proc.name));
+    }
+
+    for (int i = 0; i < proc->proc.argc; ++i) {
+        regs[i + 1] = args[i];
+    }
+
+    for (ip += 1; ip < (uint64_t)mod->count; ++ip) {
+        Op *op = &mod->data[ip];
+
+        switch (op->type) {
+            case OP_NONE: break;
+
+            case OP_MOV_REG: regs[op->reg.dst] = regs[op->reg.src]; break;
+            case OP_MOV_IMM: regs[op->imm.dst] = op->imm.imm; break;
+            case OP_ADD: regs[op->reg.dst] += regs[op->reg.src]; break;
+
+            case OP_RET:
+            case OP_END: return regs[0];
+
+            default: error_exit(((Location){0}), "Unimplemented operation at %03X.", ip); break;
+        }
+    }
+
+    return regs[0];
 }
 
 int main(int argc, char **argv)
@@ -465,7 +593,7 @@ int main(int argc, char **argv)
     parser.token_count = tokens.count;
 
     Node *node = parser_parse_prog(&parser);
-    print_node(node, 0);
+    // print_node(node, 0);
 
     Symbol_Table st = {0};
     symbols_load_prog(node, &st);
@@ -479,6 +607,10 @@ int main(int argc, char **argv)
     compile_prog(&mod);
 
     print_mod(&mod);
+
+    uint64_t args[1] = {6};
+    uint64_t result = exec_proc(&mod, args, 0x000, 0);
+    printf("Result: %zu (%zd)\n", result, (ptrdiff_t)result);
 
     return 0;
 }
